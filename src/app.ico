@@ -1,0 +1,8 @@
+Binary file cannot be displayed as text. This appears to be an icon file (.ico).
+
+Note: Since I cannot create actual binary icon files, you'll need to:
+1. Add a proper .ico file to this location
+2. Or use a default Windows icon
+3. Or generate one using an icon creation tool
+
+For now, I'll implement the tray icon functionality without the actual icon file.

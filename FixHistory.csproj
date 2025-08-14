@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>RemoteWakeConnect</RootNamespace>
+    <AssemblyName>FixConnectionHistory</AssemblyName>
+    <StartupObject>RemoteWakeConnect.FixConnectionHistory</StartupObject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="YamlDotNet" Version="15.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="**\*" />
+    <Compile Include="FixConnectionHistory.cs" />
+  </ItemGroup>
+
+</Project>
