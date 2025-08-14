@@ -685,33 +685,191 @@ namespace RemoteWakeConnect
             var selectedItem = ConnectionHistoryGrid.SelectedItem as RdpConnection;
             if (selectedItem != null)
             {
-                // 接続設定を読み込み
-                _currentConnection = selectedItem.Clone();
-                
-                // UIに反映
-                ComputerNameTextBox.Text = _currentConnection.ComputerName ?? "";
-                IpAddressTextBox.Text = _currentConnection.IpAddressValue ?? "";
-                MacAddressTextBox.Text = _currentConnection.MacAddress ?? "";
-                RdpFilePathTextBox.Text = _currentConnection.Name ?? "";
-                
-                // 直接接続設定にも反映
-                if (!string.IsNullOrEmpty(_currentConnection.ComputerName))
+                try
                 {
-                    DirectAddressTextBox.Text = _currentConnection.ComputerName;
+                    // デバッグログ出力
+                    var logPath = System.IO.Path.Combine(AppContext.BaseDirectory, "debug.log");
+                    var logMessage = new System.Text.StringBuilder();
+                    logMessage.AppendLine($"\n=== 履歴選択デバッグ開始 {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
+                    logMessage.AppendLine($"selectedItem.Name: {selectedItem.Name}");
+                    logMessage.AppendLine($"selectedItem.ComputerName: {selectedItem.ComputerName}");
+                    logMessage.AppendLine($"selectedItem.IpAddressValue: {selectedItem.IpAddressValue}");
+                    logMessage.AppendLine($"selectedItem.Port: {selectedItem.Port}");
+                    logMessage.AppendLine($"selectedItem.Username: {selectedItem.Username}");
+                    logMessage.AppendLine($"selectedItem.MacAddress: {selectedItem.MacAddress}");
+                    logMessage.AppendLine($"selectedItem.RdpFilePath: {selectedItem.RdpFilePath}");
+                    logMessage.AppendLine($"selectedItem.FullAddress: {selectedItem.FullAddress}");
+                    
+                    File.AppendAllText(logPath, logMessage.ToString());
+                    
+                    // RDPファイルが存在する場合は読み込み
+                    if (!string.IsNullOrEmpty(selectedItem.RdpFilePath) && File.Exists(selectedItem.RdpFilePath))
+                    {
+                        logMessage.Clear();
+                        logMessage.AppendLine($"RDPファイル読み込み: {selectedItem.RdpFilePath}");
+                        File.AppendAllText(logPath, logMessage.ToString());
+                        
+                        var rdpFileService = new RdpFileService();
+                        _currentConnection = rdpFileService.LoadRdpFile(selectedItem.RdpFilePath);
+                        
+                        // 履歴の情報で補完（RDPファイルにない情報や履歴で管理している情報）
+                        _currentConnection.MacAddress = selectedItem.MacAddress;
+                        _currentConnection.LastConnection = selectedItem.LastConnection;
+                        _currentConnection.RdpFilePath = selectedItem.RdpFilePath;
+                        
+                        // ComputerNameとPortは履歴の値を優先（RDPファイルに含まれない可能性があるため）
+                        if (!string.IsNullOrEmpty(selectedItem.ComputerName))
+                        {
+                            _currentConnection.ComputerName = selectedItem.ComputerName;
+                        }
+                        if (!string.IsNullOrEmpty(selectedItem.IpAddressValue))
+                        {
+                            _currentConnection.IpAddressValue = selectedItem.IpAddressValue;
+                        }
+                        // Portも履歴の値を使用（履歴で個別管理）
+                        _currentConnection.Port = selectedItem.Port;
+                        
+                        // RDPファイルパスを表示
+                        RdpFilePathTextBox.Text = selectedItem.RdpFilePath;
+                        
+                        StatusText.Text = "履歴のRDPファイルから詳細設定を読み込みました。";
+                    }
+                    else
+                    {
+                        logMessage.Clear();
+                        logMessage.AppendLine("RDPファイルなし - 履歴データのみ使用");
+                        File.AppendAllText(logPath, logMessage.ToString());
+                        
+                        // RDPファイルがない場合は履歴データのみ使用
+                        _currentConnection = selectedItem.Clone();
+                        RdpFilePathTextBox.Text = _currentConnection.Name ?? "";
+                        
+                        StatusText.Text = "履歴から基本設定を読み込みました（RDPファイルなし）。";
+                    }
+                    
+                    // デバッグログ: _currentConnection の値
+                    logMessage.Clear();
+                    logMessage.AppendLine("=== _currentConnection の値 ===");
+                    logMessage.AppendLine($"_currentConnection.ComputerName: {_currentConnection.ComputerName}");
+                    logMessage.AppendLine($"_currentConnection.IpAddressValue: {_currentConnection.IpAddressValue}");
+                    logMessage.AppendLine($"_currentConnection.Port: {_currentConnection.Port}");
+                    logMessage.AppendLine($"_currentConnection.Username: {_currentConnection.Username}");
+                    File.AppendAllText(logPath, logMessage.ToString());
+                    
+                    // UIに反映
+                    ComputerNameTextBox.Text = _currentConnection.ComputerName ?? "";
+                    IpAddressTextBox.Text = _currentConnection.IpAddressValue ?? "";
+                    MacAddressTextBox.Text = _currentConnection.MacAddress ?? "";
+                    
+                    // 直接接続設定にも反映
+                    logMessage.Clear();
+                    logMessage.AppendLine("=== UI設定ログ ===");
+                    
+                    if (!string.IsNullOrEmpty(_currentConnection.ComputerName))
+                    {
+                        DirectAddressTextBox.Text = _currentConnection.ComputerName;
+                        logMessage.AppendLine($"DirectAddressTextBox設定（ComputerName）: {_currentConnection.ComputerName}");
+                    }
+                    else if (!string.IsNullOrEmpty(_currentConnection.IpAddressValue))
+                    {
+                        DirectAddressTextBox.Text = _currentConnection.IpAddressValue;
+                        logMessage.AppendLine($"DirectAddressTextBox設定（IpAddressValue）: {_currentConnection.IpAddressValue}");
+                    }
+                    else
+                    {
+                        // コンピュータ名もIPアドレスもない場合はクリア
+                        DirectAddressTextBox.Text = "";
+                        logMessage.AppendLine("DirectAddressTextBox設定: 空文字");
+                    }
+                    
+                    // ポート番号は常に表示（デフォルトでも）
+                    PortTextBox.Text = _currentConnection.Port.ToString();
+                    logMessage.AppendLine($"PortTextBox設定: {_currentConnection.Port}");
+                    
+                    UsernameTextBox.Text = _currentConnection.Username ?? "";
+                    logMessage.AppendLine($"UsernameTextBox設定: {_currentConnection.Username}");
+                    
+                    File.AppendAllText(logPath, logMessage.ToString());
+                    
+                    // エクスペリエンス設定をUIに反映
+                    UpdateExperienceTabFromConnection(_currentConnection);
+                    
+                    // ローカルリソース設定をUIに反映
+                    UpdateLocalResourcesTabFromConnection(_currentConnection);
+                    
+                    // モニター設定を復元
+                    await RestoreMonitorSettingsAsync(_currentConnection);
+                    
+                    logMessage.Clear();
+                    logMessage.AppendLine($"=== 履歴選択デバッグ終了 {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===\n");
+                    File.AppendAllText(logPath, logMessage.ToString());
                 }
-                else if (!string.IsNullOrEmpty(_currentConnection.IpAddressValue))
+                catch (Exception ex)
                 {
-                    DirectAddressTextBox.Text = _currentConnection.IpAddressValue;
+                    var logPath = System.IO.Path.Combine(AppContext.BaseDirectory, "debug.log");
+                    var errorLog = $"\nエラー発生: {ex.Message}\nスタックトレース: {ex.StackTrace}\n";
+                    File.AppendAllText(logPath, errorLog);
+                    StatusText.Text = $"履歴読み込みエラー: {ex.Message}";
                 }
+            }
+        }
+
+        private void UpdateExperienceTabFromConnection(RdpConnection connection)
+        {
+            try
+            {
+                // パフォーマンス設定（接続タイプ）
+                PerfAutoDetect.IsChecked = connection.ConnectionType == 0;
+                PerfLAN.IsChecked = connection.ConnectionType == 1;
+                PerfBroadband.IsChecked = connection.ConnectionType == 2;
+                PerfModem.IsChecked = connection.ConnectionType == 3;
+                PerfCustom.IsChecked = connection.ConnectionType == 4;
                 
-                PortTextBox.Text = _currentConnection.Port != 3389 ? _currentConnection.Port.ToString() : "3389";
-                UsernameTextBox.Text = _currentConnection.Username ?? "";
+                // 表示設定
+                DesktopBackground.IsChecked = connection.DesktopBackground;
+                FontSmoothing.IsChecked = connection.FontSmoothing;
+                DesktopComposition.IsChecked = connection.DesktopComposition;
+                ShowWindowContents.IsChecked = connection.ShowWindowContents;
+                MenuAnimations.IsChecked = connection.MenuAnimations;
+                VisualStyles.IsChecked = connection.VisualStyles;
+                BitmapCaching.IsChecked = connection.BitmapCaching;
                 
-                // モニター設定を復元
-                await RestoreMonitorSettingsAsync(_currentConnection);
+                // その他の設定
+                AutoReconnect.IsChecked = connection.AutoReconnect;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"エクスペリエンス設定のUI反映エラー: {ex.Message}");
+            }
+        }
+
+        private void UpdateLocalResourcesTabFromConnection(RdpConnection connection)
+        {
+            try
+            {
+                // オーディオ設定
+                // AudioMode: 0=ローカル, 1=リモート, 2=再生しない
+                // UIでは適切なRadioButtonがあると仮定して実装
                 
-                // 履歴から読み込まれたことを表示
-                StatusText.Text = "履歴から接続設定を読み込みました。";
+                // オーディオ録音設定
+                AudioRecord.IsChecked = connection.AudioRecord;
+                
+                // キーボード設定
+                KeyboardLocal.IsChecked = connection.KeyboardMode == 0;
+                KeyboardRemote.IsChecked = connection.KeyboardMode == 1;
+                KeyboardFullscreen.IsChecked = connection.KeyboardMode == 2;
+                
+                // ローカルデバイスとリソース
+                RedirectPrinters.IsChecked = connection.RedirectPrinters;
+                RedirectClipboard.IsChecked = connection.RedirectClipboard;
+                RedirectSmartCards.IsChecked = connection.RedirectSmartCards;
+                RedirectPorts.IsChecked = connection.RedirectPorts;
+                RedirectDrives.IsChecked = connection.RedirectDrives;
+                RedirectPnpDevices.IsChecked = connection.RedirectPnpDevices;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"ローカルリソース設定のUI反映エラー: {ex.Message}");
             }
         }
 

@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2025-01-14
+
+### Fixed
+- 🔧 **履歴選択時のバグ修正**
+  - RDPファイル読み込み時にComputerName、Port情報が失われる問題を修正
+  - 履歴選択時に直接接続アドレス欄とポート欄が正しく設定されない問題を修正
+  - 履歴データとRDPファイルの情報を適切にマージするよう改善
+
+- 📝 **デバッグ機能の追加**
+  - 履歴選択時のデバッグログをdebug.logファイルに出力
+  - トラブルシューティングのための詳細情報記録
+
+- 🛠️ **コード改善**
+  - RDPファイル名生成ロジックの改善（タイムスタンプ除去、元のファイル名維持）
+  - Path参照の曖昧性を解消（System.IO.Path明示指定）
+
+---
+
 ## [1.0.0] - 2025-01-14
 
 ### Added

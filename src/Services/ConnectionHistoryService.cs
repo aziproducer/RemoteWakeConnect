@@ -12,6 +12,7 @@ namespace RemoteWakeConnect.Services
     public class ConnectionHistoryService
     {
         private readonly string _historyFilePath;
+        private readonly string _rdpFilesFolder;
         private readonly ISerializer _serializer;
         private readonly IDeserializer _deserializer;
         private ObservableCollection<RdpConnection> _history;
@@ -24,6 +25,18 @@ namespace RemoteWakeConnect.Services
                 AppContext.BaseDirectory,
                 "connection_history.yaml"
             );
+            
+            // RDPファイル保存フォルダを設定
+            _rdpFilesFolder = Path.Combine(
+                AppContext.BaseDirectory,
+                "rdp_files"
+            );
+            
+            // RDPファイルフォルダが存在しない場合は作成
+            if (!Directory.Exists(_rdpFilesFolder))
+            {
+                Directory.CreateDirectory(_rdpFilesFolder);
+            }
 
             // YAMLシリアライザーの設定
             _serializer = new SerializerBuilder()
@@ -37,6 +50,9 @@ namespace RemoteWakeConnect.Services
 
             _history = new ObservableCollection<RdpConnection>();
             LoadHistory();
+            
+            // 既存履歴のマイグレーション処理
+            MigrateExistingHistory();
         }
 
         public ObservableCollection<RdpConnection> GetHistory()
@@ -64,12 +80,43 @@ namespace RemoteWakeConnect.Services
                 }
             }
 
+            // RDPファイルを作成してパスを設定
+            var rdpFileName = GenerateRdpFileName(connection);
+            var rdpFilePath = Path.Combine(_rdpFilesFolder, rdpFileName);
+            connection.RdpFilePath = rdpFilePath;
+            
+            // RDPファイルを保存
+            try
+            {
+                var rdpFileService = new RdpFileService();
+                rdpFileService.SaveRdpFile(rdpFilePath, connection);
+            }
+            catch (Exception ex)
+            {
+                // RDPファイル保存エラーは履歴追加を妨げない
+                System.Diagnostics.Debug.WriteLine($"RDPファイル保存エラー: {ex.Message}");
+            }
+
             // 同じアドレスの既存エントリを検索
             var existingIndex = _history.ToList().FindIndex(c => 
                 c.FullAddress == connection.FullAddress);
 
             if (existingIndex >= 0)
             {
+                // 古いRDPファイルを削除
+                if (!string.IsNullOrEmpty(_history[existingIndex].RdpFilePath) && 
+                    File.Exists(_history[existingIndex].RdpFilePath))
+                {
+                    try
+                    {
+                        File.Delete(_history[existingIndex].RdpFilePath);
+                    }
+                    catch
+                    {
+                        // ファイル削除エラーは無視
+                    }
+                }
+                
                 // 既存エントリを更新（最新情報で上書き）
                 _history[existingIndex] = connection.Clone();
                 // リストの先頭に移動
@@ -181,6 +228,105 @@ namespace RemoteWakeConnect.Services
                 // 保存エラーは警告のみ
                 System.Diagnostics.Debug.WriteLine($"履歴の保存エラー: {ex.Message}");
             }
+        }
+        
+        private void MigrateExistingHistory()
+        {
+            bool hasChanges = false;
+            
+            foreach (var connection in _history)
+            {
+                // RdpFilePathが設定されていない既存エントリを処理
+                if (string.IsNullOrEmpty(connection.RdpFilePath))
+                {
+                    try
+                    {
+                        // RDPファイルを作成
+                        var rdpFileName = GenerateRdpFileName(connection);
+                        var rdpFilePath = Path.Combine(_rdpFilesFolder, rdpFileName);
+                        connection.RdpFilePath = rdpFilePath;
+                        
+                        // RDPファイルを保存
+                        var rdpFileService = new RdpFileService();
+                        rdpFileService.SaveRdpFile(rdpFilePath, connection);
+                        
+                        hasChanges = true;
+                        
+                        System.Diagnostics.Debug.WriteLine($"マイグレーション: {rdpFileName} を作成");
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"マイグレーション失敗: {ex.Message}");
+                        // エラーが発生しても処理を継続
+                    }
+                }
+            }
+            
+            // 変更があった場合は履歴を保存
+            if (hasChanges)
+            {
+                SaveHistory();
+                System.Diagnostics.Debug.WriteLine("履歴のマイグレーションが完了しました");
+            }
+        }
+        
+        private string GenerateRdpFileName(RdpConnection connection)
+        {
+            // 元のRDPファイル名がある場合はそれを使用
+            if (!string.IsNullOrEmpty(connection.Name))
+            {
+                var originalFileName = Path.GetFileName(connection.Name);
+                if (!string.IsNullOrEmpty(originalFileName) && originalFileName.EndsWith(".rdp", StringComparison.OrdinalIgnoreCase))
+                {
+                    return originalFileName;
+                }
+                else if (!string.IsNullOrEmpty(originalFileName))
+                {
+                    // 拡張子がない場合は.rdpを追加
+                    return $"{originalFileName}.rdp";
+                }
+            }
+            
+            // 元のファイル名がない場合は自動生成
+            var baseName = "";
+            
+            if (!string.IsNullOrEmpty(connection.ComputerName))
+            {
+                baseName = connection.ComputerName;
+            }
+            else if (!string.IsNullOrEmpty(connection.IpAddressValue))
+            {
+                baseName = connection.IpAddressValue.Replace(".", "_");
+            }
+            else
+            {
+                baseName = "Connection";
+            }
+            
+            // 無効な文字を除去
+            var invalidChars = Path.GetInvalidFileNameChars();
+            foreach (var c in invalidChars)
+            {
+                baseName = baseName.Replace(c, '_');
+            }
+            
+            // ポート番号が3389以外の場合は追加
+            if (connection.Port != 3389)
+            {
+                baseName += $"_port{connection.Port}";
+            }
+            
+            var fileName = $"{baseName}.rdp";
+            
+            // ファイル名が長すぎる場合は切り詰め
+            if (fileName.Length > 100)
+            {
+                var maxBaseLength = 100 - 4; // ".rdp"を考慮
+                baseName = baseName.Substring(0, Math.Min(baseName.Length, maxBaseLength));
+                fileName = $"{baseName}.rdp";
+            }
+            
+            return fileName;
         }
         
         private void FixConnectionData(RdpConnection connection)

@@ -13,6 +13,7 @@ namespace RemoteWakeConnect.Models
         public string Username { get; set; } = string.Empty;
         public string Domain { get; set; } = string.Empty;
         public string MacAddress { get; set; } = string.Empty;
+        public string RdpFilePath { get; set; } = string.Empty; // 履歴用RDPファイルのパス
         public int ScreenModeId { get; set; } = 2; // 1=Windowed, 2=Fullscreen
         public bool UseMultimon { get; set; } = false;
         public int SelectedMonitors { get; set; } = 0;
@@ -96,6 +97,7 @@ namespace RemoteWakeConnect.Models
                 Username = this.Username,
                 Domain = this.Domain,
                 MacAddress = this.MacAddress,
+                RdpFilePath = this.RdpFilePath,
                 ScreenModeId = this.ScreenModeId,
                 UseMultimon = this.UseMultimon,
                 SelectedMonitors = this.SelectedMonitors,
