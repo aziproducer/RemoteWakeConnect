@@ -9,6 +9,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using Microsoft.Win32;
+using RemoteWakeConnect.Dialogs;
 using RemoteWakeConnect.Models;
 using RemoteWakeConnect.Services;
 
@@ -23,6 +24,7 @@ namespace RemoteWakeConnect
         private readonly ConnectionHistoryService _historyService;
         private readonly NetworkService _networkService;
         private readonly MonitorConfigService _monitorConfigService;
+        private readonly SessionMonitorService _sessionMonitorService;
         
         private List<MonitorInfo> _currentMonitors;
         private RdpConnection? _currentConnection;
@@ -51,6 +53,7 @@ namespace RemoteWakeConnect
                 _historyService = new ConnectionHistoryService();
                 _networkService = new NetworkService();
                 _monitorConfigService = new MonitorConfigService();
+                _sessionMonitorService = new SessionMonitorService();
                 LogDebug("Services created");
                 
                 _currentMonitors = new List<MonitorInfo>();
@@ -586,6 +589,14 @@ namespace RemoteWakeConnect
                     }
                 }
                 
+                // セッションチェックを実行
+                bool shouldConnect = await CheckSessionBeforeConnect(_currentConnection);
+                if (!shouldConnect)
+                {
+                    StatusText.Text = "接続をキャンセルしました。";
+                    return;
+                }
+
                 await _remoteDesktopService.ConnectAsync(_currentConnection);
                 StatusText.Text = "リモートデスクトップ接続を開始しました。";
                 
@@ -1075,6 +1086,14 @@ namespace RemoteWakeConnect
                         // 少し待機してUIが更新されるのを確認できるようにする
                         await Task.Delay(500);
                         
+                        // セッションチェックを実行
+                        bool shouldConnect = await CheckSessionBeforeConnect(_currentConnection);
+                        if (!shouldConnect)
+                        {
+                            StatusText.Text = "接続をキャンセルしました。";
+                            return;
+                        }
+                        
                         await _remoteDesktopService.ConnectAsync(_currentConnection);
                         
                         // 履歴を更新（モニター設定も含む）
@@ -1108,6 +1127,78 @@ namespace RemoteWakeConnect
                     MessageBoxButton.OK,
                     MessageBoxImage.Error
                 );
+            }
+        }
+
+        /// <summary>
+        /// RDP接続前にセッション状態を確認
+        /// </summary>
+        private async Task<bool> CheckSessionBeforeConnect(RdpConnection connection)
+        {
+            try
+            {
+                // 接続先のアドレスを取得
+                string targetHost = "";
+                if (!string.IsNullOrEmpty(connection.FullAddress))
+                {
+                    // FullAddressからポート番号を除去
+                    var parts = connection.FullAddress.Split(':');
+                    targetHost = parts[0];
+                }
+                else if (!string.IsNullOrEmpty(connection.IpAddress))
+                {
+                    targetHost = connection.IpAddress;
+                }
+                else if (!string.IsNullOrEmpty(connection.ComputerName))
+                {
+                    targetHost = connection.ComputerName;
+                }
+
+                if (string.IsNullOrEmpty(targetHost))
+                {
+                    // 接続先が不明な場合はチェックをスキップ
+                    return true;
+                }
+
+                StatusText.Text = "セッション状態を確認中...";
+                
+                // セッションチェックを実行
+                var checkResult = await _sessionMonitorService.CheckSessionsAsync(targetHost);
+                
+                // エラーが発生した場合はそのまま接続を許可（警告なし）
+                if (!checkResult.IsSuccess)
+                {
+                    LogDebug($"Session check failed: {checkResult.ErrorMessage}");
+                    return true;
+                }
+                
+                // 他のユーザーが使用していない場合はそのまま接続
+                if (!checkResult.IsInUseByOthers)
+                {
+                    return true;
+                }
+                
+                // 警告が必要な場合はダイアログを表示
+                if (checkResult.OsInfo.WarningLevel == WarningLevel.Warning || 
+                    (checkResult.OsInfo.WarningLevel == WarningLevel.Info && checkResult.IsInUseByOthers))
+                {
+                    var dialog = new SessionWarningDialog(checkResult)
+                    {
+                        Owner = this
+                    };
+                    
+                    var result = dialog.ShowDialog();
+                    return dialog.ShouldConnect;
+                }
+                
+                // その他の場合は接続を許可
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogError("Session check error", ex);
+                // エラー時は警告なしで接続を許可
+                return true;
             }
         }
     }

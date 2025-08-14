@@ -6,9 +6,9 @@
     <Nullable>enable</Nullable>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>false</UseWindowsForms>
-    <AssemblyVersion>1.0.1</AssemblyVersion>
-    <FileVersion>1.0.1</FileVersion>
-    <ProductVersion>1.0.1</ProductVersion>
+    <AssemblyVersion>1.1.0</AssemblyVersion>
+    <FileVersion>1.1.0</FileVersion>
+    <ProductVersion>1.1.0</ProductVersion>
     <AssemblyTitle>Remote Wake Connect</AssemblyTitle>
     <Product>Remote Wake Connect</Product>
     <Company>Your Company</Company>

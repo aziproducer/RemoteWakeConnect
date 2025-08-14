@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2025-01-14
+
+### Added
+- 🔍 **セッション監視機能**
+  - RDP接続前に自動でリモートマシンのセッション状態を確認
+  - 他のユーザーが使用中の場合に警告ダイアログを表示
+  - Windows Terminal Services (WTS) APIを使用した詳細なセッション情報取得
+
+- 🖥️ **OS種別判定機能**
+  - Windows 10/11 Pro（単一セッション制限）を自動判定
+  - Windows Server（RDS有り/無し）を自動判定
+  - OS種別に応じた適切な警告レベルの設定
+
+- ⚠️ **インテリジェント警告システム**
+  - Windows 10/11 Pro: 強制切断リスクを警告
+  - Windows Server（RDS無し）: 管理用セッション制限を警告
+  - Windows Server（RDS有り）: 情報提供のみ（安全に接続可能）
+
+- 📊 **セッション詳細表示**
+  - ユーザー名、ドメイン、セッションタイプの表示
+  - アクティブ/切断/アイドル等の状態表示
+  - 詳細表示の展開/折りたたみ機能
+
+### Technical Implementation
+- Windows Terminal Services API (wtsapi32.dll) P/Invoke実装
+- WMI (Windows Management Instrumentation) によるOS情報取得
+- RDS (Remote Desktop Services) インストール状態の自動検出
+- 非同期処理による応答性の維持
+
+---
+
 ## [1.0.1] - 2025-01-14
 
 ### Fixed
