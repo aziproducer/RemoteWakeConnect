@@ -135,7 +135,7 @@ namespace RemoteWakeConnect.Native
         /// <summary>
         /// セッション一覧を列挙（Ex版）
         /// </summary>
-        [DllImport(DllName, SetLastError = true)]
+        [DllImport(DllName, SetLastError = true, CharSet = CharSet.Unicode)]
         public static extern bool WTSEnumerateSessionsEx(
             IntPtr hServer,
             [MarshalAs(UnmanagedType.U4)] ref uint pLevel,

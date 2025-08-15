@@ -5,13 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.0] - 2025-01-14
+## [1.1.0] - 2025-01-15
 
 ### Added
 - 🔍 **セッション監視機能**
   - RDP接続前に自動でリモートマシンのセッション状態を確認
   - 他のユーザーが使用中の場合に警告ダイアログを表示
   - Windows Terminal Services (WTS) APIを使用した詳細なセッション情報取得
+  - バックグラウンドでの定期的なセッション状態更新（5秒間隔）
 
 - 🖥️ **OS種別判定機能**
   - Windows 10/11 Pro（単一セッション制限）を自動判定
@@ -28,11 +29,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - アクティブ/切断/アイドル等の状態表示
   - 詳細表示の展開/折りたたみ機能
 
+### Improved
+- ⚡ **パフォーマンス最適化**
+  - WMI廃止、WTS APIのみを使用（2-5秒→即座に応答）
+  - 段階的リトライ機能（5秒→10秒→20秒）
+  - OS情報のYAMLキャッシュ（30日間有効）
+  - サーバーハンドルの再利用（10分間キャッシュ）
+  - カスタムポート対応の改善
+
+- 🔧 **UI/UX改善**
+  - モニター構成変更時の通知ダイアログ改善（OK ボタンのみ）
+  - セッション確認をモニター設定ダイアログより先に実行
+  - 接続時のモニター設定自動保存
+  - null参照警告の完全解消
+
 ### Technical Implementation
 - Windows Terminal Services API (wtsapi32.dll) P/Invoke実装
-- WMI (Windows Management Instrumentation) によるOS情報取得
-- RDS (Remote Desktop Services) インストール状態の自動検出
+- WMI (Windows Management Instrumentation) を廃止（`[Obsolete]`マーク）
+- YAMLによるOS情報の永続化
 - 非同期処理による応答性の維持
+- メモリリーク対策（サーバーハンドルの適切な管理）
 
 ---
 

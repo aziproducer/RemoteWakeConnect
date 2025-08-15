@@ -160,6 +160,31 @@ namespace RemoteWakeConnect.Services
                 SaveHistory();
             }
         }
+        
+        /// <summary>
+        /// 接続情報を更新（OS情報のキャッシュ更新用）
+        /// </summary>
+        public void UpdateConnection(RdpConnection connection)
+        {
+            if (connection == null) return;
+            
+            // 履歴内の該当する接続を検索
+            var existing = _history.FirstOrDefault(c => 
+                (c.FullAddress == connection.FullAddress) ||
+                (c.ComputerName == connection.ComputerName && c.Port == connection.Port) ||
+                (c.IpAddressValue == connection.IpAddressValue && c.Port == connection.Port));
+                
+            if (existing != null)
+            {
+                // OS情報キャッシュを更新
+                existing.CachedOsType = connection.CachedOsType;
+                existing.CachedIsRdsInstalled = connection.CachedIsRdsInstalled;
+                existing.CachedMaxSessions = connection.CachedMaxSessions;
+                existing.CachedOsInfoTime = connection.CachedOsInfoTime;
+                
+                SaveHistory();
+            }
+        }
 
         public void RemoveConnection(RdpConnection connection)
         {

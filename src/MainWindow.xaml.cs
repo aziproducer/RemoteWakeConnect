@@ -29,6 +29,11 @@ namespace RemoteWakeConnect
         private List<MonitorInfo> _currentMonitors;
         private RdpConnection? _currentConnection;
         private List<Rectangle> _monitorRectangles;
+        private SessionCheckResult? _lastSessionCheckResult;
+        private System.Threading.Timer? _sessionCheckTimer;
+        private bool _isCheckingSession = false;
+        private DateTime _lastSessionCheckTime = DateTime.MinValue;  // 最後にセッション確認が成功した時刻
+        private readonly TimeSpan _sessionCheckValidDuration = TimeSpan.FromSeconds(10);  // セッション確認結果の有効期間
 
         private static readonly string LogFile = System.IO.Path.Combine(
             AppContext.BaseDirectory,
@@ -157,6 +162,13 @@ namespace RemoteWakeConnect
         {
             try
             {
+                // セッション状態をリセット
+                if (SessionStatusText != null)
+                {
+                    SessionStatusText.Text = "未確認";
+                    SessionStatusText.Foreground = new SolidColorBrush(Colors.Gray);
+                }
+                
                 _currentConnection = _rdpFileService.LoadRdpFile(filePath);
                 
                 // FullAddressからコンピュータ名またはIPとポートを分離
@@ -207,7 +219,10 @@ namespace RemoteWakeConnect
                         _currentConnection.MacAddress = historicalConnection.MacAddress;
                     }
                     
-                    // モニター設定を復元
+                    // セッション確認を先に開始
+                    var sessionCheckTask = CheckSessionInBackground(historicalConnection);
+                    
+                    // モニター設定を復元（メッセージボックスが出る可能性がある）
                     await RestoreMonitorSettingsAsync(historicalConnection);
                     
                     StatusText.Text = $"RDPファイルを読み込みました: {System.IO.Path.GetFileName(filePath)} (設定を履歴から復元)";
@@ -250,6 +265,9 @@ namespace RemoteWakeConnect
                     {
                         StatusText.Text = $"RDPファイルを読み込みました: {System.IO.Path.GetFileName(filePath)} (MACアドレスは取得できませんでした)";
                     }
+                    
+                    // バックグラウンドでセッション状態をチェック
+                    _ = CheckSessionInBackground(_currentConnection);
                 }
             }
             catch (Exception ex)
@@ -589,18 +607,41 @@ namespace RemoteWakeConnect
                     }
                 }
                 
-                // セッションチェックを実行
-                bool shouldConnect = await CheckSessionBeforeConnect(_currentConnection);
-                if (!shouldConnect)
+                // 事前にチェック済みの結果があり、警告が必要な場合のみダイアログ表示
+                if (_lastSessionCheckResult != null && _lastSessionCheckResult.IsInUseByOthers)
                 {
-                    StatusText.Text = "接続をキャンセルしました。";
-                    return;
+                    // 警告ダイアログを表示
+                    var dialog = new SessionWarningDialog(_lastSessionCheckResult)
+                    {
+                        Owner = this
+                    };
+                    
+                    var result = dialog.ShowDialog();
+                    if (!dialog.ShouldConnect)
+                    {
+                        StatusText.Text = "接続をキャンセルしました。";
+                        return;
+                    }
+                }
+                // チェック結果がない場合のみ実行時チェック
+                else if (_lastSessionCheckResult == null)
+                {
+                    bool shouldConnect = await CheckSessionBeforeConnect(_currentConnection);
+                    if (!shouldConnect)
+                    {
+                        StatusText.Text = "接続をキャンセルしました。";
+                        return;
+                    }
                 }
 
+                // タイマーを停止
+                StopSessionCheckTimer();
+                
                 await _remoteDesktopService.ConnectAsync(_currentConnection);
                 StatusText.Text = "リモートデスクトップ接続を開始しました。";
                 
                 // 接続履歴に追加（モニター設定を含む）
+                LogDebug($"Saving connection with monitor config: Count={_currentConnection.SavedMonitorCount}, Hash={_currentConnection.MonitorConfigHash}");
                 _historyService.AddConnection(_currentConnection);
                 
                 // ジャンプリストを更新
@@ -698,6 +739,13 @@ namespace RemoteWakeConnect
             {
                 try
                 {
+                    // セッション状態をリセット
+                    if (SessionStatusText != null)
+                    {
+                        SessionStatusText.Text = "未確認";
+                        SessionStatusText.Foreground = new SolidColorBrush(Colors.Gray);
+                    }
+                    
                     // デバッグログ出力
                     var logPath = System.IO.Path.Combine(AppContext.BaseDirectory, "debug.log");
                     var logMessage = new System.Text.StringBuilder();
@@ -808,8 +856,13 @@ namespace RemoteWakeConnect
                     // ローカルリソース設定をUIに反映
                     UpdateLocalResourcesTabFromConnection(_currentConnection);
                     
-                    // モニター設定を復元
+                    // バックグラウンドでセッション状態をチェック（モニター設定復元より先に開始）
+                    var sessionCheckTask = CheckSessionInBackground(_currentConnection);
+                    
+                    // モニター設定を復元（メッセージボックスが出る可能性がある）
                     await RestoreMonitorSettingsAsync(_currentConnection);
+                    
+                    // セッションチェックのタスクは非同期で継続
                     
                     logMessage.Clear();
                     logMessage.AppendLine($"=== 履歴選択デバッグ終了 {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===\n");
@@ -973,26 +1026,70 @@ namespace RemoteWakeConnect
                         _currentMonitors.Count
                     );
 
-                    var result = MessageBox.Show(
+                    // モニター構成変更の通知のみ（復元オプションは提供しない）
+                    MessageBox.Show(
                         $"前回の接続時からモニター構成が変更されています。\n\n" +
                         $"{changeDescription}\n\n" +
-                        $"前回の設定を復元しますか？\n" +
-                        $"「はい」: 前回の設定を復元\n" +
-                        $"「いいえ」: 現在の設定を維持",
+                        $"現在のモニター構成に合わせて設定を更新します。",
                         "モニター構成の変更",
-                        MessageBoxButton.YesNo,
-                        MessageBoxImage.Warning
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information
                     );
 
-                    if (result == MessageBoxResult.No)
+                    // 現在のモニター構成に合わせて設定を更新
+                    if (_currentConnection != null && connection == _currentConnection)
                     {
-                        return Task.CompletedTask;
+                        _currentConnection.SavedMonitorCount = _currentMonitors?.Count ?? 0;
+                        _currentConnection.SelectedMonitorIndices = _monitorConfigService.GetSelectedMonitorIndices(_currentMonitors ?? new List<MonitorInfo>());
+                        _currentConnection.MonitorConfigHash = _monitorConfigService.GenerateMonitorConfigHash(_currentMonitors ?? new List<MonitorInfo>());
+                        LogDebug($"Updated monitor config in connection: Count={_currentConnection.SavedMonitorCount}, Hash={_currentConnection.MonitorConfigHash}");
                     }
                 }
             }
 
-            // モニター選択を復元
-            _monitorConfigService.RestoreMonitorSelection(_currentMonitors, connection.SelectedMonitorIndices);
+            // 利用可能なモニターの範囲内で選択を調整
+            if (_currentMonitors != null && _currentMonitors.Count > 0)
+            {
+                if (connection.SelectedMonitorIndices != null && connection.SelectedMonitorIndices.Count > 0)
+                {
+                    // 現在存在するモニターのインデックスのみを保持
+                    var validIndices = connection.SelectedMonitorIndices
+                        .Where(idx => idx < _currentMonitors!.Count)
+                        .ToList();
+                    
+                    if (validIndices.Count > 0)
+                    {
+                        // 有効なインデックスがある場合はそれを使用
+                        _monitorConfigService.RestoreMonitorSelection(_currentMonitors!, validIndices);
+                    }
+                    else
+                    {
+                        // 有効なインデックスがない場合はプライマリモニターを選択
+                        var primaryIndex = _currentMonitors!.FindIndex(m => m.IsPrimary);
+                        if (primaryIndex >= 0)
+                        {
+                            _currentMonitors[primaryIndex].IsSelected = true;
+                        }
+                        else
+                        {
+                            _currentMonitors[0].IsSelected = true;
+                        }
+                    }
+                }
+                else
+                {
+                    // 保存された選択がない場合はプライマリモニターを選択
+                    var primaryIndex = _currentMonitors!.FindIndex(m => m.IsPrimary);
+                    if (primaryIndex >= 0)
+                    {
+                        _currentMonitors[primaryIndex].IsSelected = true;
+                    }
+                    else
+                    {
+                        _currentMonitors[0].IsSelected = true;
+                    }
+                }
+            }
             
             // UIを更新
             if (MonitorCheckBoxList != null)
@@ -1001,7 +1098,7 @@ namespace RemoteWakeConnect
             }
             UpdateMonitorLayout();
             
-            StatusText.Text = "モニター設定を復元しました。";
+            StatusText.Text = "モニター設定を調整しました。";
             
             return Task.CompletedTask;
         }
@@ -1033,11 +1130,14 @@ namespace RemoteWakeConnect
                         
                         // メインウィンドウにフォーカス
                         
-                        // モニター設定を復元
-                        await RestoreMonitorSettingsAsync(_currentConnection);
+                        // PC状態を確認（モニター設定復元より先に開始）
+                        var statusCheckTask = CheckHostStatusAsync(_currentConnection.IpAddress);
                         
-                        // PC状態を確認
-                        _ = CheckHostStatusAsync(_currentConnection.IpAddress);
+                        // バックグラウンドでセッション状態もチェック
+                        var sessionCheckTask = CheckSessionInBackground(_currentConnection);
+                        
+                        // モニター設定を復元（メッセージボックスが出る可能性がある）
+                        await RestoreMonitorSettingsAsync(_currentConnection);
 
                         if (useWol && !string.IsNullOrEmpty(MacAddressTextBox.Text))
                         {
@@ -1131,6 +1231,278 @@ namespace RemoteWakeConnect
         }
 
         /// <summary>
+        /// バックグラウンドでセッション状態をチェック
+        /// </summary>
+        private async Task CheckSessionInBackground(RdpConnection connection)
+        {
+            try
+            {
+                // 接続先のアドレスを取得
+                string targetHost = GetTargetHost(connection);
+                
+                if (string.IsNullOrEmpty(targetHost))
+                {
+                    StopSessionCheckTimer();
+                    return;
+                }
+
+                // タイマーを開始（5秒ごとに更新）
+                StartSessionCheckTimer(connection);
+
+                // ポート番号を取得
+                int port = connection?.Port ?? 3389;
+                
+                // 初回チェックを実行
+                await PerformSessionCheck(targetHost, port, connection);
+            }
+            catch (Exception ex)
+            {
+                LogError("Background session check error", ex);
+            }
+        }
+        
+        /// <summary>
+        /// OSタイプを文字列からパース
+        /// </summary>
+        private OsType ParseOsType(string osTypeString)
+        {
+            if (Enum.TryParse<OsType>(osTypeString, out var osType))
+            {
+                return osType;
+            }
+            return OsType.Unknown;
+        }
+
+        /// <summary>
+        /// セッションチェックタイマーを開始
+        /// </summary>
+        private void StartSessionCheckTimer(RdpConnection connection)
+        {
+            // 既存のタイマーを停止
+            StopSessionCheckTimer();
+            
+            // 前回のセッション確認結果をクリア
+            _lastSessionCheckResult = null;
+            _lastSessionCheckTime = DateTime.MinValue;
+
+            // 新しいタイマーを作成（5秒ごとに実行）
+            _sessionCheckTimer = new System.Threading.Timer(async _ =>
+            {
+                if (!_isCheckingSession && connection != null)
+                {
+                    _isCheckingSession = true;
+                    try
+                    {
+                        string targetHost = GetTargetHost(connection);
+                        if (!string.IsNullOrEmpty(targetHost))
+                        {
+                            int port = connection?.Port ?? 3389;
+                            await PerformSessionCheck(targetHost, port, connection);
+                        }
+                    }
+                    finally
+                    {
+                        _isCheckingSession = false;
+                    }
+                }
+            }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+        }
+
+        /// <summary>
+        /// セッションチェックタイマーを停止
+        /// </summary>
+        private void StopSessionCheckTimer()
+        {
+            _sessionCheckTimer?.Dispose();
+            _sessionCheckTimer = null;
+        }
+
+        /// <summary>
+        /// セッションチェックを実行
+        /// </summary>
+        private async Task PerformSessionCheck(string targetHost, int port = 3389, RdpConnection? connection = null)
+        {
+            try
+            {
+                // 前回の確認結果がまだ有効な場合は、前回の結果を維持したまま新規確認を実行
+                if (_lastSessionCheckResult != null && 
+                    (DateTime.Now - _lastSessionCheckTime) < _sessionCheckValidDuration)
+                {
+                    // キャッシュが有効な間は前回の結果を表示し続ける
+                    // 「確認中」を表示しない
+                }
+                else
+                {
+                    // キャッシュが無効な場合のみ「確認中」を表示
+                    Dispatcher.Invoke(() => {
+                        UpdateStatusIndicator(null, "セッション確認中...");
+                        if (SessionStatusText != null)
+                        {
+                            SessionStatusText.Text = "セッション確認中...";
+                            SessionStatusText.Foreground = new SolidColorBrush(Colors.Gray);
+                        }
+                    });
+                }
+                
+                // YAMLからキャッシュされたOS情報を取得
+                OsInfo? cachedOsInfo = null;
+                if (connection != null && !string.IsNullOrEmpty(connection.CachedOsType))
+                {
+                    // キャッシュが30日以内の場合のみ使用
+                    if (DateTime.Now - connection.CachedOsInfoTime < TimeSpan.FromDays(30))
+                    {
+                        cachedOsInfo = new OsInfo
+                        {
+                            Type = ParseOsType(connection.CachedOsType),
+                            IsRdsInstalled = connection.CachedIsRdsInstalled,
+                            MaxSessions = connection.CachedMaxSessions,
+                            OsName = "Cached",
+                            OsVersion = "Cached"
+                        };
+                        LogDebug($"Using cached OS info for {targetHost}: {connection.CachedOsType}");
+                    }
+                }
+                
+                // セッションチェックを実行
+                var checkResult = await _sessionMonitorService.CheckSessionsAsync(targetHost, port, cachedOsInfo);
+                _lastSessionCheckResult = checkResult;
+                _lastSessionCheckTime = DateTime.Now;  // 確認時刻を更新
+                
+                // OS情報を接続履歴に保存
+                if (checkResult.IsSuccess && connection != null)
+                {
+                    bool needUpdate = false;
+                    
+                    // OS情報が更新された場合、履歴に保存
+                    if (checkResult?.OsInfo != null && checkResult.OsInfo.Type != OsType.Unknown)
+                    {
+                        string newOsType = checkResult.OsInfo.Type.ToString();
+                        if (connection.CachedOsType != newOsType ||
+                            connection.CachedIsRdsInstalled != checkResult.OsInfo.IsRdsInstalled ||
+                            connection.CachedMaxSessions != checkResult.OsInfo.MaxSessions)
+                        {
+                            connection.CachedOsType = newOsType;
+                            connection.CachedIsRdsInstalled = checkResult.OsInfo.IsRdsInstalled;
+                            connection.CachedMaxSessions = checkResult.OsInfo.MaxSessions;
+                            connection.CachedOsInfoTime = DateTime.Now;
+                            needUpdate = true;
+                            LogDebug($"Updated OS info cache for {targetHost}: {newOsType}");
+                        }
+                    }
+                    
+                    // 履歴を更新
+                    if (needUpdate)
+                    {
+                        _historyService.UpdateConnection(connection);
+                    }
+                }
+                
+                // 結果に応じてセッション状態を更新
+                Dispatcher.Invoke(() => {
+                    if (SessionStatusText == null) return;
+                    
+                    if (!checkResult.IsSuccess)
+                    {
+                        // エラー時
+                        SessionStatusText!.Text = "セッション確認失敗";
+                        SessionStatusText.Foreground = new SolidColorBrush(Colors.Gray);
+                    }
+                    else if (checkResult.IsInUseByOthers)
+                    {
+                        // 他のユーザーが使用中
+                        var otherUsers = checkResult.Sessions
+                            .Where(s => s.IsActive && 
+                                !s.UserName.Equals(checkResult.CurrentUser, StringComparison.OrdinalIgnoreCase))
+                            .ToList();
+                        
+                        if (checkResult.OsInfo.WarningLevel == WarningLevel.Warning)
+                        {
+                            // 警告が必要（強制切断リスクあり）
+                            var userNames = string.Join(", ", otherUsers.Select(u => u.FullUserName));
+                            SessionStatusText.Text = $"⚠️ 警告: {userNames} が使用中\n接続すると強制切断されます";
+                            SessionStatusText.Foreground = new SolidColorBrush(Colors.Red);
+                        }
+                        else
+                        {
+                            // 情報のみ（RDS有り）
+                            var userNames = string.Join(", ", otherUsers.Select(u => u.FullUserName));
+                            SessionStatusText.Text = $"ℹ️ 情報: {userNames} が接続中\n複数接続可能です";
+                            SessionStatusText.Foreground = new SolidColorBrush(Colors.Orange);
+                        }
+                    }
+                    else
+                    {
+                        // 誰も使用していない（Ping確認は別途実行）
+                        Task.Run(async () => {
+                            var pingResult = await _wakeOnLanService.PingHostAsync(targetHost);
+                            Dispatcher.Invoke(() => {
+                                if (SessionStatusText == null) return;
+                                
+                                if (pingResult)
+                                {
+                                    SessionStatusText.Text = "✅ 接続可能\n使用中のユーザーはいません";
+                                    SessionStatusText.Foreground = new SolidColorBrush(Colors.Green);
+                                }
+                                else
+                                {
+                                    SessionStatusText.Text = "❌ オフライン\n対象マシンが応答しません";
+                                    SessionStatusText.Foreground = new SolidColorBrush(Colors.DarkGray);
+                                }
+                            });
+                        });
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                LogError("Session check error", ex);
+                // エラー時でも前回の有効な結果があれば維持
+                if (_lastSessionCheckResult != null && 
+                    (DateTime.Now - _lastSessionCheckTime) < _sessionCheckValidDuration)
+                {
+                    // 前回の結果をそのまま維持（何もしない）
+                }
+            }
+        }
+        
+        /// <summary>
+        /// 接続先のホストアドレスを取得
+        /// </summary>
+        private string GetTargetHost(RdpConnection connection)
+        {
+            if (!string.IsNullOrEmpty(connection?.FullAddress))
+            {
+                var parts = connection.FullAddress.Split(':');
+                return parts[0];
+            }
+            else if (!string.IsNullOrEmpty(connection?.IpAddress))
+            {
+                return connection.IpAddress;
+            }
+            else if (!string.IsNullOrEmpty(connection?.ComputerName))
+            {
+                return connection.ComputerName;
+            }
+            return "";
+        }
+
+        /// <summary>
+        /// ステータスインジケーターのマウスオーバー時
+        /// </summary>
+        private void StatusIndicator_MouseEnter(object sender, MouseEventArgs e)
+        {
+            // 詳細なツールチップ表示（既に設定済み）
+        }
+
+        /// <summary>
+        /// ステータスインジケーターのマウスアウト時
+        /// </summary>
+        private void StatusIndicator_MouseLeave(object sender, MouseEventArgs e)
+        {
+            // 特に処理なし
+        }
+
+        /// <summary>
         /// RDP接続前にセッション状態を確認
         /// </summary>
         private async Task<bool> CheckSessionBeforeConnect(RdpConnection connection)
@@ -1162,8 +1534,15 @@ namespace RemoteWakeConnect
 
                 StatusText.Text = "セッション状態を確認中...";
                 
+                // ポート番号を取得
+                int portNumber = 3389;
+                if (connection != null && connection.Port > 0)
+                {
+                    portNumber = connection.Port;
+                }
+                
                 // セッションチェックを実行
-                var checkResult = await _sessionMonitorService.CheckSessionsAsync(targetHost);
+                var checkResult = await _sessionMonitorService.CheckSessionsAsync(targetHost, portNumber);
                 
                 // エラーが発生した場合はそのまま接続を許可（警告なし）
                 if (!checkResult.IsSuccess)

@@ -48,6 +48,12 @@ namespace RemoteWakeConnect.Models
         public bool RedirectDrives { get; set; } = false;
         public bool RedirectPnpDevices { get; set; } = false;
         
+        // OS情報のキャッシュ（セッション監視の高速化）
+        public string CachedOsType { get; set; } = string.Empty; // "Workstation", "ServerWithRds", "ServerWithoutRds", "Unknown"
+        public bool CachedIsRdsInstalled { get; set; } = false;
+        public int CachedMaxSessions { get; set; } = 0;
+        public DateTime CachedOsInfoTime { get; set; } = DateTime.MinValue;
+        
         // 互換性のためのプロパティ（FullAddressから値を生成）
         public string IpAddress 
         { 
@@ -128,7 +134,13 @@ namespace RemoteWakeConnect.Models
                 RedirectSmartCards = this.RedirectSmartCards,
                 RedirectPorts = this.RedirectPorts,
                 RedirectDrives = this.RedirectDrives,
-                RedirectPnpDevices = this.RedirectPnpDevices
+                RedirectPnpDevices = this.RedirectPnpDevices,
+                
+                // OS情報のキャッシュ
+                CachedOsType = this.CachedOsType,
+                CachedIsRdsInstalled = this.CachedIsRdsInstalled,
+                CachedMaxSessions = this.CachedMaxSessions,
+                CachedOsInfoTime = this.CachedOsInfoTime
             };
         }
     }
