@@ -19,6 +19,7 @@ namespace RemoteWakeConnect.Models
         public int SelectedMonitors { get; set; } = 0;
         public int DesktopWidth { get; set; } = 1920;
         public int DesktopHeight { get; set; } = 1080;
+        public int ColorDepth { get; set; } = 24; // 16, 24, 32 bits
         public DateTime LastConnection { get; set; }
         
         // モニター設定の保存
@@ -109,6 +110,7 @@ namespace RemoteWakeConnect.Models
                 SelectedMonitors = this.SelectedMonitors,
                 DesktopWidth = this.DesktopWidth,
                 DesktopHeight = this.DesktopHeight,
+                ColorDepth = this.ColorDepth,
                 LastConnection = this.LastConnection,
                 SavedMonitorCount = this.SavedMonitorCount,
                 SelectedMonitorIndices = new List<int>(this.SelectedMonitorIndices),

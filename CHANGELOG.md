@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2025-01-18
+
+### Changed
+- 🎨 **画面設定UIの大幅改善**
+  - RDP標準の解像度スライダーUIを実装
+  - ウィンドウ/フルスクリーンのラジオボタンを削除（スライダーに統合）
+  - スライダーの最右端を「全画面表示」モードに変更
+  
+- 🖥️ **動的な解像度リスト生成**
+  - プライマリモニターの最大解像度を自動検出
+  - モニターより大きい解像度（4K等）を自動除外
+  - 各PCの環境に合わせた適切な解像度のみ表示
+  - プライマリモニターの現在の解像度を「(現在)」として表示
+
+### Improved
+- 📊 **エクスペリエンスタブとの統合**
+  - 画面設定から重複する表示オプションを削除
+  - 接続設定（パフォーマンス、自動再接続）を削除
+  - エクスペリエンスタブで一元管理するように改善
+
+### Fixed
+- 🐛 **UI構造の修正**
+  - XMLタグの不整合を修正
+  - 削除したコントロールへの参照エラーを解消
+  - null非許容フィールドの初期化警告を修正
+
+### Technical Details
+- 解像度リストにカスタムモードと全画面表示モードを追加
+- ResolutionSliderイベントハンドラーの実装
+- UpdateResolutionDisplay、InitializeResolutionSettingsメソッドの追加
+
+---
+
 ## [1.1.1] - 2025-01-18
 
 ### Added

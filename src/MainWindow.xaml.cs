@@ -34,6 +34,9 @@ namespace RemoteWakeConnect
         private bool _isCheckingSession = false;
         private DateTime _lastSessionCheckTime = DateTime.MinValue;  // 最後にセッション確認が成功した時刻
         private readonly TimeSpan _sessionCheckValidDuration = TimeSpan.FromSeconds(10);  // セッション確認結果の有効期間
+        
+        // 標準的なRDP解像度リスト（プライマリモニターの解像度も含める）
+        private List<(int Width, int Height, string DisplayName)> _availableResolutions = new();
 
         private static readonly string LogFile = System.IO.Path.Combine(
             AppContext.BaseDirectory,
@@ -115,6 +118,10 @@ namespace RemoteWakeConnect
                 LogDebug("Initialize: Loading connection history");
                 ConnectionHistoryGrid.ItemsSource = _historyService.GetHistory();
                 LogDebug("Initialize: Connection history loaded");
+                
+                LogDebug("Initialize: Initializing resolution settings");
+                InitializeResolutionSettings();
+                LogDebug("Initialize: Resolution settings initialized");
                 
                 // コマンドライン引数からの起動処理
                 ProcessStartupArgs();
@@ -637,6 +644,9 @@ namespace RemoteWakeConnect
                 // タイマーを停止
                 StopSessionCheckTimer();
                 
+                // 画面設定を適用
+                ApplyScreenSettingsToConnection(_currentConnection);
+                
                 await _remoteDesktopService.ConnectAsync(_currentConnection);
                 StatusText.Text = "リモートデスクトップ接続を開始しました。";
                 
@@ -855,6 +865,9 @@ namespace RemoteWakeConnect
                     
                     // ローカルリソース設定をUIに反映
                     UpdateLocalResourcesTabFromConnection(_currentConnection);
+                    
+                    // 画面設定をUIに反映
+                    UpdateScreenSettingsFromConnection(_currentConnection);
                     
                     // バックグラウンドでセッション状態をチェック（モニター設定復元より先に開始）
                     var sessionCheckTask = CheckSessionInBackground(_currentConnection);
@@ -1248,6 +1261,196 @@ namespace RemoteWakeConnect
         }
 
         /// <summary>
+        /// 解像度設定を初期化
+        /// </summary>
+        private void InitializeResolutionSettings()
+        {
+            try
+            {
+                // 標準的なRDP解像度リストを作成
+                var allResolutions = new List<(int Width, int Height, string DisplayName)>
+                {
+                    (640, 480, "640 × 480"),
+                    (800, 600, "800 × 600"),
+                    (1024, 768, "1024 × 768"),
+                    (1152, 864, "1152 × 864"),
+                    (1280, 720, "1280 × 720 (HD)"),
+                    (1280, 1024, "1280 × 1024"),
+                    (1366, 768, "1366 × 768"),
+                    (1440, 900, "1440 × 900"),
+                    (1600, 900, "1600 × 900"),
+                    (1600, 1200, "1600 × 1200"),
+                    (1680, 1050, "1680 × 1050"),
+                    (1920, 1080, "1920 × 1080 (Full HD)"),
+                    (1920, 1200, "1920 × 1200"),
+                    (2560, 1440, "2560 × 1440 (QHD)"),
+                    (2560, 1600, "2560 × 1600"),
+                    (3840, 2160, "3840 × 2160 (4K UHD)")
+                };
+
+                int maxWidth = 1920;
+                int maxHeight = 1080;
+                
+                // プライマリモニターの解像度を取得
+                if (_currentMonitors?.Any(m => m.IsPrimary) == true)
+                {
+                    var primaryMonitor = _currentMonitors.First(m => m.IsPrimary);
+                    maxWidth = (int)primaryMonitor.Bounds.Width;
+                    maxHeight = (int)primaryMonitor.Bounds.Height;
+                    
+                    // プライマリモニターの解像度より大きい解像度を除外
+                    _availableResolutions = allResolutions
+                        .Where(r => r.Width <= maxWidth && r.Height <= maxHeight)
+                        .ToList();
+                    
+                    // プライマリモニターの解像度が既存リストにない場合は追加
+                    if (!_availableResolutions.Any(r => r.Width == maxWidth && r.Height == maxHeight))
+                    {
+                        _availableResolutions.Add((maxWidth, maxHeight, $"{maxWidth} × {maxHeight} (現在)"));
+                    }
+                }
+                else
+                {
+                    // モニター情報が取得できない場合は標準的な解像度のみ
+                    _availableResolutions = allResolutions
+                        .Where(r => r.Width <= 1920 && r.Height <= 1200)
+                        .ToList();
+                }
+                
+                // リストを解像度順にソート
+                _availableResolutions = _availableResolutions
+                    .OrderBy(r => r.Width * r.Height)
+                    .ToList();
+
+                // カスタム解像度をリストに追加
+                _availableResolutions.Add((0, 0, "カスタム..."));
+                
+                // 全画面表示を最後に追加（スライダーの最右端）
+                _availableResolutions.Add((-1, -1, "全画面表示"));
+
+                // スライダーの最大値を設定
+                ResolutionSlider.Maximum = _availableResolutions.Count - 1;
+                
+                // デフォルトでプライマリモニターの解像度を選択
+                var defaultIndex = _availableResolutions.FindIndex(r => r.Width == maxWidth && r.Height == maxHeight);
+                if (defaultIndex >= 0)
+                {
+                    ResolutionSlider.Value = defaultIndex;
+                }
+                else
+                {
+                    // プライマリモニターの解像度が見つからない場合は適切な解像度を選択
+                    defaultIndex = _availableResolutions.FindIndex(r => r.Width == 1920 && r.Height == 1080);
+                    if (defaultIndex >= 0)
+                    {
+                        ResolutionSlider.Value = defaultIndex;
+                    }
+                    else
+                    {
+                        ResolutionSlider.Value = _availableResolutions.Count - 3; // カスタムと全画面の前
+                    }
+                }
+                
+                UpdateResolutionDisplay();
+            }
+            catch (Exception ex)
+            {
+                LogError("InitializeResolutionSettings failed", ex);
+            }
+        }
+
+        /// <summary>
+        /// 解像度スライダーの値変更イベント
+        /// </summary>
+        private void ResolutionSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            UpdateResolutionDisplay();
+        }
+
+        /// <summary>
+        /// 解像度表示を更新
+        /// </summary>
+        private void UpdateResolutionDisplay()
+        {
+            try
+            {
+                if (_availableResolutions == null || ResolutionDisplayText == null)
+                    return;
+
+                int index = (int)ResolutionSlider.Value;
+                if (index >= 0 && index < _availableResolutions.Count)
+                {
+                    var resolution = _availableResolutions[index];
+                    
+                    if (resolution.Width == -1 && resolution.Height == -1) // 全画面表示
+                    {
+                        ResolutionDisplayText.Text = "全画面表示";
+                        if (CustomResolutionGrid != null)
+                            CustomResolutionGrid.Visibility = Visibility.Collapsed;
+                        
+                        // プライマリモニターの解像度を使用
+                        if (_currentMonitors?.Any(m => m.IsPrimary) == true)
+                        {
+                            var primaryMonitor = _currentMonitors.First(m => m.IsPrimary);
+                            if (DesktopWidthTextBox != null)
+                                DesktopWidthTextBox.Text = ((int)primaryMonitor.Bounds.Width).ToString();
+                            if (DesktopHeightTextBox != null)
+                                DesktopHeightTextBox.Text = ((int)primaryMonitor.Bounds.Height).ToString();
+                        }
+                    }
+                    else if (resolution.Width == 0 && resolution.Height == 0) // カスタム
+                    {
+                        ResolutionDisplayText.Text = "カスタム解像度";
+                        if (CustomResolutionGrid != null)
+                            CustomResolutionGrid.Visibility = Visibility.Visible;
+                    }
+                    else
+                    {
+                        ResolutionDisplayText.Text = resolution.DisplayName;
+                        if (CustomResolutionGrid != null)
+                            CustomResolutionGrid.Visibility = Visibility.Collapsed;
+                        
+                        // テキストボックスの値も更新
+                        if (DesktopWidthTextBox != null)
+                            DesktopWidthTextBox.Text = resolution.Width.ToString();
+                        if (DesktopHeightTextBox != null)
+                            DesktopHeightTextBox.Text = resolution.Height.ToString();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError("UpdateResolutionDisplay failed", ex);
+            }
+        }
+
+        /// <summary>
+        /// カスタム解像度テキストボックスの変更イベント
+        /// </summary>
+        private void CustomResolution_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            try
+            {
+                if (CustomResolutionGrid?.Visibility == Visibility.Visible)
+                {
+                    if (int.TryParse(DesktopWidthTextBox.Text, out int width) && 
+                        int.TryParse(DesktopHeightTextBox.Text, out int height))
+                    {
+                        ResolutionDisplayText.Text = $"{width} × {height} px";
+                    }
+                    else
+                    {
+                        ResolutionDisplayText.Text = "カスタム解像度";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError("CustomResolution_TextChanged failed", ex);
+            }
+        }
+
+        /// <summary>
         /// バックグラウンドでセッション状態をチェック
         /// </summary>
         private async Task CheckSessionInBackground(RdpConnection connection)
@@ -1595,6 +1798,120 @@ namespace RemoteWakeConnect
                 LogError("Session check error", ex);
                 // エラー時は警告なしで接続を許可
                 return true;
+            }
+        }
+        
+        /// <summary>
+        /// 接続設定から画面設定UIを更新
+        /// </summary>
+        private void UpdateScreenSettingsFromConnection(RdpConnection connection)
+        {
+            try
+            {
+                // 画面モードは解像度スライダーで管理（全画面表示はスライダーの最右端）
+                
+                // 解像度
+                DesktopWidthTextBox.Text = connection.DesktopWidth.ToString();
+                DesktopHeightTextBox.Text = connection.DesktopHeight.ToString();
+                
+                // 色深度
+                foreach (ComboBoxItem item in ColorDepthComboBox.Items)
+                {
+                    if (item.Tag?.ToString() == connection.ColorDepth.ToString())
+                    {
+                        ColorDepthComboBox.SelectedItem = item;
+                        break;
+                    }
+                }
+                
+                // 接続タイプとパフォーマンス設定はエクスペリエンスタブで管理
+                // エクスペリエンスタブの設定を更新
+                if (connection.ConnectionType == 0)
+                    PerfAutoDetect.IsChecked = true;
+                else if (connection.ConnectionType == 1)
+                    PerfLAN.IsChecked = true;
+                else if (connection.ConnectionType == 2)
+                    PerfBroadband.IsChecked = true;
+                else if (connection.ConnectionType == 3)
+                    PerfModem.IsChecked = true;
+                else
+                    PerfCustom.IsChecked = true;
+                
+                // 表示設定もエクスペリエンスタブで管理
+                DesktopBackground.IsChecked = connection.DesktopBackground;
+                FontSmoothing.IsChecked = connection.FontSmoothing;
+                DesktopComposition.IsChecked = connection.DesktopComposition;
+                ShowWindowContents.IsChecked = connection.ShowWindowContents;
+                MenuAnimations.IsChecked = connection.MenuAnimations;
+                VisualStyles.IsChecked = connection.VisualStyles;
+                BitmapCaching.IsChecked = connection.BitmapCaching;
+                AutoReconnect.IsChecked = connection.AutoReconnect;
+            }
+            catch (Exception ex)
+            {
+                LogError("画面設定更新エラー", ex);
+            }
+        }
+        
+        /// <summary>
+        /// 現在のUI設定を接続設定に反映
+        /// </summary>
+        private void ApplyScreenSettingsToConnection(RdpConnection connection)
+        {
+            try
+            {
+                // 画面モードは解像度スライダーで管理
+                // 全画面表示が選択されている場合
+                int index = (int)ResolutionSlider.Value;
+                if (index >= 0 && index < _availableResolutions.Count)
+                {
+                    var resolution = _availableResolutions[index];
+                    if (resolution.Width == -1 && resolution.Height == -1)
+                    {
+                        connection.ScreenModeId = 2; // フルスクリーン
+                    }
+                    else
+                    {
+                        connection.ScreenModeId = 1; // ウィンドウモード
+                    }
+                }
+                
+                // 解像度
+                if (int.TryParse(DesktopWidthTextBox.Text, out int width))
+                    connection.DesktopWidth = width;
+                if (int.TryParse(DesktopHeightTextBox.Text, out int height))
+                    connection.DesktopHeight = height;
+                    
+                // 色深度
+                if (ColorDepthComboBox.SelectedItem is ComboBoxItem colorItem && 
+                    int.TryParse(colorItem.Tag?.ToString(), out int colorDepth))
+                    connection.ColorDepth = colorDepth;
+                    
+                // 接続タイプ（エクスペリエンスタブの設定から取得）
+                if (PerfAutoDetect.IsChecked == true)
+                    connection.ConnectionType = 0;
+                else if (PerfLAN.IsChecked == true)
+                    connection.ConnectionType = 1;
+                else if (PerfBroadband.IsChecked == true)
+                    connection.ConnectionType = 2;
+                else if (PerfModem.IsChecked == true)
+                    connection.ConnectionType = 3;
+                else
+                    connection.ConnectionType = 0; // カスタムの場合はデフォルト
+                    
+                // 表示設定（エクスペリエンスタブから取得）
+                connection.DesktopBackground = DesktopBackground.IsChecked == true;
+                connection.FontSmoothing = FontSmoothing.IsChecked == true;
+                connection.DesktopComposition = DesktopComposition.IsChecked == true;
+                connection.ShowWindowContents = ShowWindowContents.IsChecked == true;
+                connection.MenuAnimations = MenuAnimations.IsChecked == true;
+                connection.VisualStyles = VisualStyles.IsChecked == true;
+                connection.BitmapCaching = BitmapCaching.IsChecked == true;
+                connection.AutoReconnect = AutoReconnect.IsChecked == true;
+            }
+            catch (Exception ex)
+            {
+                LogError("画面設定適用エラー", ex);
             }
         }
     }

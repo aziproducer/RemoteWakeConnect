@@ -59,7 +59,7 @@ namespace RemoteWakeConnect.Services
             lines.Add($"desktopheight:i:{connection.DesktopHeight}");
 
             // エクスペリエンス設定
-            lines.Add("session bpp:i:32");
+            lines.Add($"session bpp:i:{connection.ColorDepth}");
             lines.Add("compression:i:1");
             lines.Add($"connection type:i:{connection.ConnectionType}");
             lines.Add($"networkautodetect:i:{(connection.ConnectionType == 0 ? 1 : 0)}");
@@ -154,6 +154,10 @@ namespace RemoteWakeConnect.Services
                 case "desktopheight":
                     if (int.TryParse(value, out int height))
                         connection.DesktopHeight = height;
+                    break;
+                case "session bpp":
+                    if (int.TryParse(value, out int colorDepth))
+                        connection.ColorDepth = colorDepth;
                     break;
                 // エクスペリエンス設定
                 case "connection type":

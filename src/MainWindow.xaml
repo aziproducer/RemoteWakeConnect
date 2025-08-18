@@ -4,7 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        Title="Remote Wake Connect v1.1.1" Height="850" Width="1000"
+        Title="Remote Wake Connect v1.2.0" Height="850" Width="1000"
         WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
@@ -457,27 +457,88 @@
                     </StackPanel>
                 </StackPanel>
                 
-                <!-- 右側: モニターレイアウト図 -->
+                <!-- 右側: モニターレイアウトと画面設定 -->
                 <Grid Grid.Column="1">
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
                     
-                    <TextBlock Grid.Row="0" 
-                               Text="モニターレイアウト:" 
-                               FontWeight="Bold" 
-                               Margin="0,0,0,5"/>
+                    <!-- モニターレイアウト図 -->
+                    <StackPanel Grid.Row="0">
+                        <TextBlock Text="モニターレイアウト:" 
+                                   FontWeight="Bold" 
+                                   Margin="0,0,0,5"/>
+                        
+                        <Border BorderBrush="LightGray" 
+                                BorderThickness="1" 
+                                Background="#F5F5F5"
+                                MinHeight="150"
+                                MaxHeight="180"
+                                Margin="0,0,0,10">
+                            <Canvas x:Name="MonitorLayoutCanvas" 
+                                    SizeChanged="MonitorLayoutCanvas_SizeChanged"/>
+                        </Border>
+                    </StackPanel>
                     
-                    <Border Grid.Row="1" 
-                            BorderBrush="LightGray" 
-                            BorderThickness="1" 
-                            Background="#F5F5F5"
-                            MinHeight="200"
-                            MaxHeight="250">
-                        <Canvas x:Name="MonitorLayoutCanvas" 
-                                SizeChanged="MonitorLayoutCanvas_SizeChanged"/>
-                    </Border>
+                    <!-- 画面設定 -->
+                    <GroupBox Grid.Row="1" Header="画面設定" Margin="0,0,0,10">
+                        <StackPanel Margin="10">
+                            <!-- 解像度設定 -->
+                            <TextBlock Text="解像度:" FontWeight="Bold" Margin="0,0,0,5"/>
+                            <Grid Margin="0,0,0,10">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                
+                                <!-- 解像度スライダー -->
+                                <Slider x:Name="ResolutionSlider" 
+                                        Grid.Row="0"
+                                        Minimum="0" 
+                                        Maximum="10" 
+                                        Value="5" 
+                                        TickPlacement="BottomRight" 
+                                        TickFrequency="1" 
+                                        IsSnapToTickEnabled="True"
+                                        Margin="0,0,0,5"
+                                        ValueChanged="ResolutionSlider_ValueChanged"/>
+                                
+                                <!-- 解像度表示 -->
+                                <TextBlock x:Name="ResolutionDisplayText" 
+                                           Grid.Row="1"
+                                           Text="1920 × 1080 px" 
+                                           HorizontalAlignment="Center"
+                                           FontSize="11"
+                                           Margin="0,0,0,5"/>
+                                
+                                <!-- カスタム解像度入力 -->
+                                <Grid Grid.Row="2" x:Name="CustomResolutionGrid" Visibility="Collapsed">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="60"/>
+                                        <ColumnDefinition Width="10"/>
+                                        <ColumnDefinition Width="60"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="DesktopWidthTextBox" Grid.Column="0" Text="1920" FontSize="11" TextChanged="CustomResolution_TextChanged"/>
+                                    <TextBlock Grid.Column="1" Text="×" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    <TextBox x:Name="DesktopHeightTextBox" Grid.Column="2" Text="1080" FontSize="11" TextChanged="CustomResolution_TextChanged"/>
+                                    <TextBlock Grid.Column="3" Text="  px" VerticalAlignment="Center" FontSize="11"/>
+                                </Grid>
+                            </Grid>
+                            
+                            <!-- 色深度 -->
+                            <TextBlock Text="色深度:" FontWeight="Bold" Margin="0,0,0,5"/>
+                            <ComboBox x:Name="ColorDepthComboBox" Margin="0,0,0,10" FontSize="11">
+                                <ComboBoxItem Content="High Color (16 bit)" Tag="16"/>
+                                <ComboBoxItem Content="True Color (24 bit)" IsSelected="True" Tag="24"/>
+                                <ComboBoxItem Content="True Color (32 bit)" Tag="32"/>
+                            </ComboBox>
+                            
+                        </StackPanel>
+                    </GroupBox>
                 </Grid>
             </Grid>
         </GroupBox>
