@@ -139,7 +139,7 @@ namespace RemoteWakeConnect.Services
             SaveHistory();
         }
 
-        public void UpdateConnection(string address, string macAddress, string ipAddress)
+        public void UpdateConnection(string address, string macAddress, string ipAddress, string username = null)
         {
             var connection = _history.FirstOrDefault(c => c.FullAddress == address);
             if (connection != null)
@@ -156,6 +156,10 @@ namespace RemoteWakeConnect.Services
                         connection.FullAddress = ipAddress;
                     }
                 }
+                
+                // ユーザー名を更新
+                if (!string.IsNullOrEmpty(username))
+                    connection.Username = username;
                 
                 SaveHistory();
             }

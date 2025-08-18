@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2025-01-18
+
+### Added
+- 🔍 **接続履歴の機能改善**
+  - 接続履歴選択時に自動でPing確認を実行
+  - MACアドレス取得処理の強化（ARPテーブル→nbtstat の順で試行）
+  - 接続後のMACアドレス自動補足（3秒後と5秒後の2回試行）
+  - ユーザー名表示列の追加（DataGridに表示）
+
+### Fixed
+- 🐛 **MACアドレス取得の問題修正**
+  - RDPファイル基準での接続時にMACアドレスが消える問題を修正
+  - 履歴に既存のMACアドレスがある場合でも再取得されない問題を修正
+  - LAN内機器のMACアドレスが正しく保存されない問題を修正
+
+### Improved
+- 📊 **UI/UX改善**
+  - ウィンドウの初期幅を900pxから1000pxに拡張（見やすさ向上）
+  - 接続履歴選択時にWOLインジケータが自動更新されるよう改善
+  - デバッグログの出力を強化（MACアドレス取得プロセスの可視化）
+
+### Technical Details
+- `UpdateConnectionWithMacAddressAsync`メソッドの改良
+- ConnectionHistoryServiceのUpdateConnectionメソッドにユーザー名パラメータ追加
+- NetworkServiceのGetMacFromNbtstatAsyncメソッドの活用強化
+
+---
+
 ## [1.1.0] - 2025-01-15
 
 ### Added

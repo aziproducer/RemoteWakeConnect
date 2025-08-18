@@ -1,4 +1,4 @@
-# Remote Wake Connect
+# Remote Wake Connect v1.1.1
 
 Wake-on-LAN統合リモートデスクトップクライアント
 

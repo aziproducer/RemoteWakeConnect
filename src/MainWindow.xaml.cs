@@ -864,6 +864,23 @@ namespace RemoteWakeConnect
                     
                     // セッションチェックのタスクは非同期で継続
                     
+                    // 非同期でPCの状態を確認（WOLインジケータ更新）
+                    _ = Task.Run(async () =>
+                    {
+                        await Task.Delay(100); // UIの更新を待つ
+                        string targetHost = !string.IsNullOrEmpty(_currentConnection.IpAddressValue) 
+                            ? _currentConnection.IpAddressValue 
+                            : _currentConnection.ComputerName;
+                        
+                        if (!string.IsNullOrEmpty(targetHost))
+                        {
+                            await Dispatcher.InvokeAsync(async () =>
+                            {
+                                await CheckHostStatusAsync(targetHost);
+                            });
+                        }
+                    });
+                    
                     logMessage.Clear();
                     logMessage.AppendLine($"=== 履歴選択デバッグ終了 {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===\n");
                     File.AppendAllText(logPath, logMessage.ToString());

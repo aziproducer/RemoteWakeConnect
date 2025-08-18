@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using RemoteWakeConnect.Models;
 
@@ -9,10 +10,14 @@ namespace RemoteWakeConnect.Services
     public class RemoteDesktopService
     {
         private readonly RdpFileService _rdpFileService;
+        private readonly NetworkService _networkService;
+        private readonly ConnectionHistoryService _connectionHistoryService;
         
         public RemoteDesktopService()
         {
             _rdpFileService = new RdpFileService();
+            _networkService = new NetworkService();
+            _connectionHistoryService = new ConnectionHistoryService();
         }
 
         public async Task<bool> ConnectAsync(RdpConnection connection)
@@ -67,6 +72,18 @@ namespace RemoteWakeConnect.Services
                     
                     // 接続履歴を更新
                     connection.LastConnection = DateTime.Now;
+                    
+                    // 非同期でMACアドレスを取得して保存
+                    _ = Task.Run(async () =>
+                    {
+                        // 接続が確立されるまで待つ（より長く待機）
+                        await Task.Delay(3000);
+                        await UpdateConnectionWithMacAddressAsync(connection);
+                        
+                        // 失敗した場合はもう一度試す
+                        await Task.Delay(2000);
+                        await UpdateConnectionWithMacAddressAsync(connection);
+                    });
                     
                     return process != null && !process.HasExited;
                 }
@@ -129,6 +146,92 @@ namespace RemoteWakeConnect.Services
             catch
             {
                 return false;
+            }
+        }
+        
+        /// <summary>
+        /// 接続後にMACアドレスを取得して履歴を更新
+        /// </summary>
+        private async Task UpdateConnectionWithMacAddressAsync(RdpConnection connection)
+        {
+            try
+            {
+                // 履歴内の接続情報を検索
+                var existingConnection = _connectionHistoryService.FindByAddress(connection.FullAddress);
+                if (existingConnection == null)
+                {
+                    System.Diagnostics.Debug.WriteLine($"履歴に接続情報が見つかりません: {connection.FullAddress}");
+                    return;
+                }
+                
+                // MACアドレスが未取得の場合のみ取得を試みる
+                if (string.IsNullOrEmpty(existingConnection.MacAddress))
+                {
+                    string hostNameOrAddress = !string.IsNullOrEmpty(connection.ComputerName) 
+                        ? connection.ComputerName 
+                        : (!string.IsNullOrEmpty(connection.IpAddressValue) 
+                            ? connection.IpAddressValue 
+                            : connection.FullAddress.Split(':')[0]);
+                    
+                    System.Diagnostics.Debug.WriteLine($"MACアドレス取得開始: {hostNameOrAddress}");
+                    
+                    if (!string.IsNullOrEmpty(hostNameOrAddress))
+                    {
+                        // MACアドレスを取得（複数の方法を試す）
+                        var macAddress = await _networkService.GetMacAddressAsync(hostNameOrAddress);
+                        
+                        // 最初の方法で失敗した場合、nbtstatも試す
+                        if (string.IsNullOrEmpty(macAddress))
+                        {
+                            System.Diagnostics.Debug.WriteLine("arp/WMI失敗、nbtstatを試します");
+                            macAddress = await _networkService.GetMacFromNbtstatAsync(hostNameOrAddress);
+                        }
+                        
+                        if (!string.IsNullOrEmpty(macAddress))
+                        {
+                            System.Diagnostics.Debug.WriteLine($"MACアドレス取得成功: {macAddress}");
+                            existingConnection.MacAddress = macAddress;
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.WriteLine("MACアドレス取得失敗");
+                        }
+                    }
+                }
+                
+                // ユーザー名を更新（空の場合のみ）
+                if (string.IsNullOrEmpty(existingConnection.Username) && !string.IsNullOrEmpty(connection.Username))
+                {
+                    existingConnection.Username = connection.Username;
+                }
+                
+                // IPアドレスも更新（コンピュータ名で接続した場合）
+                if (string.IsNullOrEmpty(existingConnection.IpAddressValue) && 
+                    !string.IsNullOrEmpty(connection.ComputerName))
+                {
+                    try
+                    {
+                        var hostEntry = await System.Net.Dns.GetHostEntryAsync(connection.ComputerName);
+                        var ipv4Address = hostEntry.AddressList
+                            .FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+                        if (ipv4Address != null)
+                        {
+                            existingConnection.IpAddressValue = ipv4Address.ToString();
+                            System.Diagnostics.Debug.WriteLine($"IPアドレス解決成功: {ipv4Address}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"IPアドレス解決失敗: {ex.Message}");
+                    }
+                }
+                
+                // 履歴を更新して保存
+                _connectionHistoryService.UpdateConnection(existingConnection);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"MACアドレス取得エラー: {ex.Message}");
             }
         }
     }
