@@ -139,7 +139,7 @@ namespace RemoteWakeConnect.Services
             SaveHistory();
         }
 
-        public void UpdateConnection(string address, string macAddress, string ipAddress, string username = null)
+        public void UpdateConnection(string address, string macAddress, string ipAddress, string? username = null)
         {
             var connection = _history.FirstOrDefault(c => c.FullAddress == address);
             if (connection != null)

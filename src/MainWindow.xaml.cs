@@ -868,9 +868,9 @@ namespace RemoteWakeConnect
                     _ = Task.Run(async () =>
                     {
                         await Task.Delay(100); // UIの更新を待つ
-                        string targetHost = !string.IsNullOrEmpty(_currentConnection.IpAddressValue) 
+                        string? targetHost = !string.IsNullOrEmpty(_currentConnection?.IpAddressValue) 
                             ? _currentConnection.IpAddressValue 
-                            : _currentConnection.ComputerName;
+                            : _currentConnection?.ComputerName;
                         
                         if (!string.IsNullOrEmpty(targetHost))
                         {
@@ -1418,10 +1418,10 @@ namespace RemoteWakeConnect
                 Dispatcher.Invoke(() => {
                     if (SessionStatusText == null) return;
                     
-                    if (!checkResult.IsSuccess)
+                    if (checkResult == null || !checkResult.IsSuccess)
                     {
                         // エラー時
-                        SessionStatusText!.Text = "セッション確認失敗";
+                        SessionStatusText.Text = "セッション確認失敗";
                         SessionStatusText.Foreground = new SolidColorBrush(Colors.Gray);
                     }
                     else if (checkResult.IsInUseByOthers)
