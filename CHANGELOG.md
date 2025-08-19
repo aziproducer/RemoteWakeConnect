@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2025-08-19
+
+### Fixed
+- 🐛 **RDPファイル削除問題の修正**
+  - rdp_filesフォルダのRDPファイルが接続後に削除される問題を修正
+  - ConnectionHistoryServiceで既存履歴更新時にRDPファイルを削除していた処理を修正
+  - RDPファイルを使いまわしするための保持機能を実装
+
+- 🔧 **履歴選択時の解像度設定問題の修正**
+  - 履歴選択時に解像度スライダーが正しく設定されない問題を修正
+  - UpdateScreenSettingsFromConnectionメソッドに解像度スライダー設定処理を追加
+  - 2560x1440などのカスタム解像度が1920x1080にリセットされる問題を解決
+
+### Improved
+- 📊 **デバッグ機能の強化**
+  - RDPファイル処理の詳細ログ出力
+  - 既存RDPファイル検出・更新ログの追加
+  - 解像度スライダー設定時のデバッグログ追加
+
+### Technical Details
+- ConnectionHistoryService.AddConnection() でのFile.Delete処理を削除
+- RDPファイル保持のための条件分岐ロジック追加
+- 解像度スライダーインデックス検索・設定アルゴリズムの実装
+
+---
+
 ## [1.2.0] - 2025-01-18
 
 ### Changed

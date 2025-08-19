@@ -24,43 +24,61 @@ namespace RemoteWakeConnect.Services
         {
             try
             {
-                // RDPファイル名を決定（元のファイル名があればそれを使用、なければ生成）
-                string rdpFileName;
-                if (!string.IsNullOrEmpty(connection.Name))
+                string rdpFilePath;
+                bool isTemporaryFile = false;
+                
+                // 既存のRDPファイルパスがある場合はそれを使用
+                System.Diagnostics.Debug.WriteLine($"[RemoteDesktopService] RdpFilePath check: {connection.RdpFilePath}");
+                System.Diagnostics.Debug.WriteLine($"[RemoteDesktopService] File exists: {(!string.IsNullOrEmpty(connection.RdpFilePath) && File.Exists(connection.RdpFilePath))}");
+                
+                if (!string.IsNullOrEmpty(connection.RdpFilePath) && File.Exists(connection.RdpFilePath))
                 {
-                    // 元のRDPファイル名をそのまま使用
-                    rdpFileName = Path.GetFileName(connection.Name);
-                }
-                else if (!string.IsNullOrEmpty(connection.ComputerName))
-                {
-                    // コンピュータ名を使用
-                    rdpFileName = $"{connection.ComputerName}.rdp";
-                }
-                else if (!string.IsNullOrEmpty(connection.FullAddress))
-                {
-                    // フルアドレスから安全なファイル名を生成
-                    var safeName = connection.FullAddress.Replace(":", "_").Replace(".", "_");
-                    rdpFileName = $"{safeName}.rdp";
+                    rdpFilePath = connection.RdpFilePath;
+                    System.Diagnostics.Debug.WriteLine($"[RemoteDesktopService] Using existing file: {rdpFilePath}");
+                    // 既存ファイルを最新の設定で更新
+                    _rdpFileService.SaveRdpFile(rdpFilePath, connection);
                 }
                 else
                 {
-                    // デフォルト名
-                    rdpFileName = "RemoteWakeConnect.rdp";
+                    // RDPファイル名を決定（元のファイル名があればそれを使用、なければ生成）
+                    string rdpFileName;
+                    if (!string.IsNullOrEmpty(connection.Name))
+                    {
+                        // 元のRDPファイル名をそのまま使用
+                        rdpFileName = Path.GetFileName(connection.Name);
+                    }
+                    else if (!string.IsNullOrEmpty(connection.ComputerName))
+                    {
+                        // コンピュータ名を使用
+                        rdpFileName = $"{connection.ComputerName}.rdp";
+                    }
+                    else if (!string.IsNullOrEmpty(connection.FullAddress))
+                    {
+                        // フルアドレスから安全なファイル名を生成
+                        var safeName = connection.FullAddress.Replace(":", "_").Replace(".", "_");
+                        rdpFileName = $"{safeName}.rdp";
+                    }
+                    else
+                    {
+                        // デフォルト名
+                        rdpFileName = "RemoteWakeConnect.rdp";
+                    }
+                    
+                    // 一時的なRDPファイルを作成（固定の場所に固定の名前で）
+                    rdpFilePath = Path.Combine(Path.GetTempPath(), rdpFileName);
+                    isTemporaryFile = true;
+                    
+                    // RDPファイルを保存
+                    _rdpFileService.SaveRdpFile(rdpFilePath, connection);
                 }
-                
-                // 一時的なRDPファイルを作成（固定の場所に固定の名前で）
-                string tempRdpFile = Path.Combine(Path.GetTempPath(), rdpFileName);
-                
+
                 try
                 {
-                    // RDPファイルを保存
-                    _rdpFileService.SaveRdpFile(tempRdpFile, connection);
-
                     // mstscコマンドを実行
                     var processInfo = new ProcessStartInfo
                     {
                         FileName = "mstsc.exe",
-                        Arguments = $"\"{tempRdpFile}\"",
+                        Arguments = $"\"{rdpFilePath}\"",
                         UseShellExecute = false,
                         CreateNoWindow = false
                     };
@@ -89,19 +107,22 @@ namespace RemoteWakeConnect.Services
                 }
                 finally
                 {
-                    // 一時ファイルの削除を遅延実行
-                    _ = Task.Run(async () =>
+                    // 一時ファイルの場合のみ削除を遅延実行
+                    if (isTemporaryFile)
                     {
-                        await Task.Delay(5000);
-                        try
+                        _ = Task.Run(async () =>
                         {
-                            if (File.Exists(tempRdpFile))
+                            await Task.Delay(5000);
+                            try
                             {
-                                File.Delete(tempRdpFile);
+                                if (File.Exists(rdpFilePath))
+                                {
+                                    File.Delete(rdpFilePath);
+                                }
                             }
-                        }
-                        catch { }
-                    });
+                            catch { }
+                        });
+                    }
                 }
             }
             catch (Exception ex)

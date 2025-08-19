@@ -103,17 +103,24 @@ namespace RemoteWakeConnect.Services
 
             if (existingIndex >= 0)
             {
-                // 古いRDPファイルを削除
-                if (!string.IsNullOrEmpty(_history[existingIndex].RdpFilePath) && 
-                    File.Exists(_history[existingIndex].RdpFilePath))
+                // rdp_filesフォルダのRDPファイルは削除しない（使いまわしするため）
+                // 設定が変更されている可能性があるため、RDPファイルを更新
+                var existingRdpPath = _history[existingIndex].RdpFilePath;
+                if (!string.IsNullOrEmpty(existingRdpPath))
                 {
+                    // 既存のRDPファイルパスを維持
+                    connection.RdpFilePath = existingRdpPath;
+                    
+                    // RDPファイルを最新の設定で更新
                     try
                     {
-                        File.Delete(_history[existingIndex].RdpFilePath);
+                        var rdpFileService = new RdpFileService();
+                        rdpFileService.SaveRdpFile(existingRdpPath, connection);
+                        System.Diagnostics.Debug.WriteLine($"既存RDPファイルを更新: {Path.GetFileName(existingRdpPath)}");
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // ファイル削除エラーは無視
+                        System.Diagnostics.Debug.WriteLine($"RDPファイル更新エラー: {ex.Message}");
                     }
                 }
                 

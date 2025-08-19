@@ -4,7 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        Title="Remote Wake Connect v1.2.0" Height="870" Width="1000"
+        Title="Remote Wake Connect v1.2.0" Height="800" Width="1000"
         WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
@@ -15,37 +15,158 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         
         <!-- ヘッダー -->
-        <Border Grid.Row="0" Background="#2C3E50" Padding="10">
+        <Border Grid.Row="0" Background="#2C3E50" Padding="5">
             <TextBlock Text="Remote Wake Connect" 
                        Foreground="White" 
-                       FontSize="24" 
+                       FontSize="20" 
                        FontWeight="Bold"/>
         </Border>
         
         <!-- メインコンテンツ -->
-        <Grid Grid.Row="1" Margin="10">
+        <Grid Grid.Row="1" Margin="5">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="2*"/>      <!-- 基本設定タブ: 40% -->
-                <ColumnDefinition Width="Auto"/>    <!-- セパレーター -->
-                <ColumnDefinition Width="3*"/>      <!-- セッション状態・接続履歴: 60% -->
+                <ColumnDefinition Width="150"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="280"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
             
-            <!-- 左側: 接続設定 -->
-            <TabControl Grid.Column="0" Margin="0,0,5,0">
+            <!-- 左側: モニター設定 -->
+            <GroupBox Grid.Column="0" Header="モニター設定" Margin="0,0,3,0">
+                <Grid Margin="5">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    
+                    <!-- 検出情報（簡略化） -->
+                    <TextBlock x:Name="CurrentMonitorConfigText" 
+                               Grid.Row="0"
+                               Text="モニター情報を取得中..." 
+                               TextWrapping="Wrap"
+                               FontSize="9"
+                               Margin="0,0,0,3"/>
+                    
+                    <!-- 更新ボタン（小さく） -->
+                    <Button x:Name="RefreshMonitorsButton" 
+                            Grid.Row="1"
+                            Content="更新" 
+                            Width="60" 
+                            Height="20"
+                            FontSize="9"
+                            HorizontalAlignment="Left"
+                            Margin="0,0,0,3"
+                            Click="RefreshMonitorsButton_Click"/>
+                    
+                    <!-- モニター選択（コンパクト） -->
+                    <StackPanel Grid.Row="2">
+                        <TextBlock Text="使用するモニター:" FontWeight="Bold" FontSize="9" Margin="0,0,0,2"/>
+                        <Border BorderBrush="LightGray" BorderThickness="1" Margin="0,0,0,3">
+                            <ScrollViewer MaxHeight="120" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl x:Name="MonitorCheckBoxList">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <CheckBox Margin="2,1" 
+                                                      IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                      Tag="{Binding Index}"
+                                                      Checked="MonitorCheckBox_Checked"
+                                                      Unchecked="MonitorCheckBox_Unchecked">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock FontSize="8" FontWeight="Bold" Margin="0,0,3,0">
+                                                        <TextBlock.Text>
+                                                            <Binding Path="Index" StringFormat="[{0}]"/>
+                                                        </TextBlock.Text>
+                                                    </TextBlock>
+                                                    <TextBlock FontSize="8">
+                                                        <TextBlock.Text>
+                                                            <MultiBinding StringFormat="{}{0}">
+                                                                <Binding Path="Resolution"/>
+                                                            </MultiBinding>
+                                                        </TextBlock.Text>
+                                                    </TextBlock>
+                                                    <TextBlock FontSize="8" Foreground="Red" Margin="3,0,0,0" 
+                                                               Visibility="{Binding IsPrimary, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                        <TextBlock.Text>(P)</TextBlock.Text>
+                                                    </TextBlock>
+                                                </StackPanel>
+                                            </CheckBox>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Border>
+                    </StackPanel>
+                    
+                    <!-- 選択ボタン（小さく） -->
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,2,0,0">
+                        <Button x:Name="SelectAllMonitorsButton" 
+                                Content="すべて選択" 
+                                Width="65" 
+                                Height="18"
+                                FontSize="8"
+                                Margin="0,0,3,0" 
+                                Click="SelectAllMonitorsButton_Click"/>
+                        <Button x:Name="DeselectAllMonitorsButton" 
+                                Content="すべて解除" 
+                                Width="65" 
+                                Height="18"
+                                FontSize="8"
+                                Click="DeselectAllMonitorsButton_Click"/>
+                    </StackPanel>
+                    
+                    <!-- 画面設定（コンパクト） -->
+                    <StackPanel Grid.Row="4" Margin="0,5,0,0">
+                        <TextBlock Text="解像度:" FontWeight="Bold" FontSize="9" Margin="0,0,0,2"/>
+                        <Slider x:Name="ResolutionSlider" 
+                                Minimum="0" 
+                                Maximum="10" 
+                                Value="5" 
+                                TickPlacement="BottomRight" 
+                                TickFrequency="2" 
+                                IsSnapToTickEnabled="True"
+                                Margin="0,0,0,2"
+                                ValueChanged="ResolutionSlider_ValueChanged"/>
+                        <TextBlock x:Name="ResolutionDisplayText" 
+                                   Text="1920 × 1080 px" 
+                                   HorizontalAlignment="Center"
+                                   FontSize="9"
+                                   Margin="0,0,0,3"/>
+                        <TextBlock Text="色深度:" FontWeight="Bold" FontSize="9" Margin="0,0,0,2"/>
+                        <ComboBox x:Name="ColorDepthComboBox" FontSize="9" Height="20">
+                            <ComboBoxItem Content="16 bit" Tag="16"/>
+                            <ComboBoxItem Content="24 bit" IsSelected="True" Tag="24"/>
+                            <ComboBoxItem Content="32 bit" Tag="32"/>
+                        </ComboBox>
+                    </StackPanel>
+                </Grid>
+            </GroupBox>
+            
+            <!-- セパレーター1 -->
+            <GridSplitter Grid.Column="1" 
+                          Width="3" 
+                          HorizontalAlignment="Center" 
+                          VerticalAlignment="Stretch" 
+                          Background="#E0E0E0"/>
+            
+            <!-- 中央: 接続設定 -->
+            <TabControl Grid.Column="2" Margin="0,0,3,0">
                 <!-- 基本設定タブ -->
                 <TabItem Header="基本設定">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <StackPanel>
                     <!-- RDPファイル読み込み -->
-                    <GroupBox Header="RDPファイル" Margin="0,0,0,3">
-                        <Grid Margin="5">
+                    <GroupBox Header="RDPファイル" Margin="0,0,0,8">
+                        <Grid Margin="8">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="60"/>
+                                <ColumnDefinition Width="50"/>
                             </Grid.ColumnDefinitions>
                             
                             <TextBox x:Name="RdpFilePathTextBox" 
@@ -56,46 +177,46 @@
                             <Button x:Name="BrowseRdpButton" 
                                     Grid.Column="1" 
                                     Content="参照" 
-                                    Margin="5,0,0,0"
+                                    Margin="3,0,0,0"
                                     Click="BrowseRdpButton_Click"/>
                         </Grid>
                     </GroupBox>
                     
                     <!-- Wake On LAN設定 -->
                     <GroupBox Header="Wake On LAN設定">
-                        <Grid Margin="5">
+                        <Grid Margin="8">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="70"/>
+                                <ColumnDefinition Width="60"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             
-                            <Label Grid.Row="0" Grid.Column="0" Content="コンピュータ:" FontSize="11"/>
+                            <Label Grid.Row="0" Grid.Column="0" Content="コンピュータ:" FontSize="10"/>
                             <TextBox x:Name="ComputerNameTextBox" 
                                      Grid.Row="0" 
                                      Grid.Column="1"
                                      ToolTip="例: DESKTOP-ABC123"/>
                             
-                            <Label Grid.Row="1" Grid.Column="0" Content="IP:" FontSize="11"/>
+                            <Label Grid.Row="1" Grid.Column="0" Content="IP:" FontSize="10"/>
                             <Grid Grid.Row="1" Grid.Column="1">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="20"/>
-                                    <ColumnDefinition Width="60"/>
+                                    <ColumnDefinition Width="16"/>
+                                    <ColumnDefinition Width="50"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBox x:Name="IpAddressTextBox" 
                                          Grid.Column="0"
                                          ToolTip="例: 192.168.1.100"/>
                                 <Border x:Name="StatusIndicator" 
                                         Grid.Column="1" 
-                                        Width="16" 
-                                        Height="16" 
-                                        Margin="2,0"
-                                        CornerRadius="8"
+                                        Width="14" 
+                                        Height="14" 
+                                        Margin="1,0"
+                                        CornerRadius="7"
                                         Background="Gray"
                                         ToolTip="未確認"
                                         MouseEnter="StatusIndicator_MouseEnter"
@@ -103,13 +224,13 @@
                                 <Button x:Name="CheckStatusButton" 
                                         Grid.Column="2" 
                                         Content="確認" 
-                                        Height="22"
-                                        FontSize="11"
+                                        Height="20"
+                                        FontSize="10"
                                         Margin="2,0,0,0"
                                         Click="CheckStatusButton_Click"/>
                             </Grid>
                             
-                            <Label Grid.Row="2" Grid.Column="0" Content="MAC:" FontSize="11"/>
+                            <Label Grid.Row="2" Grid.Column="0" Content="MAC:" FontSize="10"/>
                             <TextBox x:Name="MacAddressTextBox" 
                                      Grid.Row="2" 
                                      Grid.Column="1"
@@ -118,32 +239,32 @@
                     </GroupBox>
                     
                     <!-- 直接接続設定 -->
-                    <GroupBox Header="直接接続設定" Margin="0,3,0,0">
-                        <Grid Margin="5">
+                    <GroupBox Header="直接接続設定" Margin="0,8,0,0">
+                        <Grid Margin="8">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="70"/>
+                                <ColumnDefinition Width="60"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             
-                            <Label Grid.Row="0" Grid.Column="0" Content="アドレス:" FontSize="11"/>
+                            <Label Grid.Row="0" Grid.Column="0" Content="アドレス:" FontSize="10"/>
                             <TextBox x:Name="DirectAddressTextBox" 
                                      Grid.Row="0" 
                                      Grid.Column="1"
                                      ToolTip="コンピュータ名またはIPアドレス"/>
                             
-                            <Label Grid.Row="1" Grid.Column="0" Content="ポート:" FontSize="11"/>
+                            <Label Grid.Row="1" Grid.Column="0" Content="ポート:" FontSize="10"/>
                             <TextBox x:Name="PortTextBox" 
                                      Grid.Row="1" 
                                      Grid.Column="1"
                                      Text="3389"
                                      ToolTip="RDPポート番号（デフォルト: 3389）"/>
                             
-                            <Label Grid.Row="2" Grid.Column="0" Content="ユーザー:" FontSize="11"/>
+                            <Label Grid.Row="2" Grid.Column="0" Content="ユーザー:" FontSize="10"/>
                             <TextBox x:Name="UsernameTextBox" 
                                      Grid.Row="2" 
                                      Grid.Column="1"
@@ -168,7 +289,7 @@
                                 </StackPanel>
                             </GroupBox>
                             
-                            <GroupBox Header="表示設定" Margin="0,5,0,0">
+                            <GroupBox Header="表示設定" Margin="0,8,0,0">
                                 <StackPanel Margin="8">
                                     <CheckBox x:Name="DesktopBackground" Content="デスクトップの背景" IsChecked="True" Margin="0,1"/>
                                     <CheckBox x:Name="FontSmoothing" Content="フォントスムージング" IsChecked="True" Margin="0,1"/>
@@ -180,7 +301,7 @@
                                 </StackPanel>
                             </GroupBox>
                             
-                            <GroupBox Header="再接続設定" Margin="0,5,0,0">
+                            <GroupBox Header="再接続設定" Margin="0,8,0,0">
                                 <StackPanel Margin="8">
                                     <CheckBox x:Name="AutoReconnect" Content="接続が切断された場合に自動的に再接続" IsChecked="True" Margin="0,1"/>
                                 </StackPanel>
@@ -198,11 +319,11 @@
                                     <RadioButton x:Name="AudioPlayLocal" Content="このコンピュータで再生" IsChecked="True" Margin="0,1"/>
                                     <RadioButton x:Name="AudioPlayRemote" Content="リモートコンピュータで再生" Margin="0,1"/>
                                     <RadioButton x:Name="AudioPlayNone" Content="再生しない" Margin="0,1"/>
-                                    <CheckBox x:Name="AudioRecord" Content="リモートオーディオ録音を有効にする" Margin="0,5,0,0"/>
+                                    <CheckBox x:Name="AudioRecord" Content="リモートオーディオ録音を有効にする" Margin="0,8,0,0"/>
                                 </StackPanel>
                             </GroupBox>
                             
-                            <GroupBox Header="キーボード設定" Margin="0,5,0,0">
+                            <GroupBox Header="キーボード設定" Margin="0,8,0,0">
                                 <StackPanel Margin="8">
                                     <RadioButton x:Name="KeyboardLocal" Content="このコンピュータ上" IsChecked="True" Margin="0,1"/>
                                     <RadioButton x:Name="KeyboardRemote" Content="リモートコンピュータ上" Margin="0,1"/>
@@ -210,7 +331,7 @@
                                 </StackPanel>
                             </GroupBox>
                             
-                            <GroupBox Header="ローカルデバイスとリソース" Margin="0,5,0,0">
+                            <GroupBox Header="ローカルデバイスとリソース" Margin="0,8,0,0">
                                 <StackPanel Margin="8">
                                     <CheckBox x:Name="RedirectPrinters" Content="プリンター" IsChecked="True" Margin="0,1"/>
                                     <CheckBox x:Name="RedirectClipboard" Content="クリップボード" IsChecked="True" Margin="0,1"/>
@@ -225,15 +346,15 @@
                 </TabItem>
             </TabControl>
             
-            <!-- セパレーター -->
-            <GridSplitter Grid.Column="1" 
-                          Width="5" 
+            <!-- セパレーター2 -->
+            <GridSplitter Grid.Column="3" 
+                          Width="3" 
                           HorizontalAlignment="Center" 
                           VerticalAlignment="Stretch" 
                           Background="#E0E0E0"/>
             
-            <!-- 右側: セッション状態と接続履歴 -->
-            <Grid Grid.Column="2" Margin="5,0,0,0">
+            <!-- 右側: 接続履歴 -->
+            <Grid Grid.Column="4" Margin="3,0,0,0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
@@ -245,19 +366,19 @@
                 <Border Grid.Row="0" 
                         BorderBrush="#D0D0D0" 
                         BorderThickness="1" 
-                        CornerRadius="4"
+                        CornerRadius="3"
                         Background="#F8F8F8"
-                        Padding="10"
-                        Margin="0,0,0,10">
+                        Padding="8"
+                        Margin="0,0,0,8">
                     <StackPanel>
                         <TextBlock Text="セッション状態" 
                                    FontWeight="Bold" 
-                                   FontSize="12"
+                                   FontSize="11"
                                    Foreground="#555555"
-                                   Margin="0,0,0,5"/>
+                                   Margin="0,0,0,3"/>
                         <TextBlock x:Name="SessionStatusText" 
                                    Text="未確認" 
-                                   FontSize="13"
+                                   FontSize="12"
                                    Foreground="#333333"
                                    TextWrapping="Wrap"/>
                     </StackPanel>
@@ -266,12 +387,12 @@
                 <!-- 履歴ヘッダー -->
                 <TextBlock Grid.Row="1" 
                            Text="接続履歴" 
-                           FontSize="14" 
+                           FontSize="13" 
                            FontWeight="Bold" 
-                           Margin="0,0,0,10"/>
+                           Margin="0,0,0,8"/>
                 
                 <!-- フィルター -->
-                <Grid Grid.Row="2" Margin="0,0,0,10">
+                <Grid Grid.Row="2" Margin="0,0,0,8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
@@ -280,7 +401,7 @@
                     <TextBox x:Name="HistorySearchTextBox" 
                              Grid.Column="0"
                              TextChanged="HistorySearchTextBox_TextChanged"
-                             Margin="0,0,5,0">
+                             Margin="0,0,3,0">
                         <TextBox.Template>
                             <ControlTemplate TargetType="TextBox">
                                 <Border BorderBrush="LightGray" BorderThickness="1" CornerRadius="2">
@@ -300,9 +421,9 @@
                     <Button x:Name="ClearHistoryButton" 
                             Grid.Column="1"
                             Content="クリア" 
-                            Width="60" 
-                            Height="22"
-                            FontSize="11"
+                            Width="50" 
+                            Height="20"
+                            FontSize="10"
                             Click="ClearHistoryButton_Click"/>
                 </Grid>
                 
@@ -319,55 +440,55 @@
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="コンピュータ" 
                                             Binding="{Binding ComputerName}" 
-                                            Width="100"/>
+                                            Width="90"/>
                         <DataGridTextColumn Header="IP" 
                                             Binding="{Binding IpAddressValue}" 
-                                            Width="85"/>
+                                            Width="80"/>
                         <DataGridTextColumn Header="ポート" 
                                             Binding="{Binding Port}" 
-                                            Width="40">
+                                            Width="35">
                             <DataGridTextColumn.ElementStyle>
                                 <Style TargetType="TextBlock">
-                                    <Setter Property="FontSize" Value="10"/>
+                                    <Setter Property="FontSize" Value="9"/>
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
                         <DataGridTextColumn Header="ユーザー" 
                                             Binding="{Binding Username}" 
-                                            Width="70">
+                                            Width="65">
                             <DataGridTextColumn.ElementStyle>
                                 <Style TargetType="TextBlock">
-                                    <Setter Property="FontSize" Value="10"/>
+                                    <Setter Property="FontSize" Value="9"/>
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
                         <DataGridTextColumn Header="MAC" 
                                             Binding="{Binding MacAddress}" 
-                                            Width="85">
+                                            Width="80">
                             <DataGridTextColumn.ElementStyle>
                                 <Style TargetType="TextBlock">
-                                    <Setter Property="FontSize" Value="10"/>
+                                    <Setter Property="FontSize" Value="9"/>
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
                         <DataGridTextColumn Header="最終接続" 
                                             Binding="{Binding LastConnection, StringFormat='{}{0:MM/dd HH:mm}'}" 
-                                            Width="80">
+                                            Width="75">
                             <DataGridTextColumn.ElementStyle>
                                 <Style TargetType="TextBlock">
-                                    <Setter Property="FontSize" Value="10"/>
+                                    <Setter Property="FontSize" Value="9"/>
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
-                        <DataGridTemplateColumn Header="選択" Width="35">
+                        <DataGridTemplateColumn Header="選択" Width="30">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <Button Content="▶" 
                                             Click="UseHistoryButton_Click"
                                             Tag="{Binding}"
-                                            Width="30"
-                                            Height="20"
-                                            FontSize="10"/>
+                                            Width="25"
+                                            Height="18"
+                                            FontSize="9"/>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
@@ -376,166 +497,8 @@
             </Grid>
         </Grid>
         
-        <!-- モニター設定（下部全幅・3列） -->
-        <GroupBox Grid.Row="2" Header="モニター設定" Margin="10,0,10,8">
-            <Grid Margin="10">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="0.8*" MinWidth="200"/>  <!-- 検出されたモニターと使用するモニター -->
-                    <ColumnDefinition Width="1*" MinWidth="220"/>    <!-- 画面設定 -->
-                    <ColumnDefinition Width="1*" MinWidth="220"/>    <!-- モニターレイアウト -->
-                </Grid.ColumnDefinitions>
-                
-                <!-- 第1列: 検出されたモニターと使用するモニター -->
-                <StackPanel Grid.Column="0" Margin="0,0,10,0">
-                    <!-- 検出情報 -->
-                    <TextBlock Text="検出されたモニター:" FontWeight="Bold" Margin="0,0,0,5"/>
-                    <TextBlock x:Name="CurrentMonitorConfigText" 
-                               Text="モニター情報を取得中..." 
-                               TextWrapping="Wrap"
-                               FontSize="11"
-                               Margin="0,0,0,8"/>
-                    
-                    <!-- 更新ボタン -->
-                    <Button x:Name="RefreshMonitorsButton" 
-                            Content="モニター情報を更新" 
-                            Width="150" 
-                            HorizontalAlignment="Left"
-                            Margin="0,0,0,10"
-                            Click="RefreshMonitorsButton_Click"/>
-                    
-                    <!-- 使用するモニター選択 -->
-                    <TextBlock Text="使用するモニター:" FontWeight="Bold" Margin="0,0,0,5"/>
-                    <Border BorderBrush="LightGray" BorderThickness="1" Margin="0,0,0,8">
-                        <ScrollViewer MaxHeight="100" VerticalScrollBarVisibility="Auto">
-                            <ItemsControl x:Name="MonitorCheckBoxList">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <CheckBox Margin="4,2" 
-                                                  IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                                                  Tag="{Binding Index}"
-                                                  Checked="MonitorCheckBox_Checked"
-                                                  Unchecked="MonitorCheckBox_Unchecked">
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock FontSize="11" FontWeight="Bold" Margin="0,0,5,0">
-                                                    <TextBlock.Text>
-                                                        <Binding Path="Index" StringFormat="[{0}]"/>
-                                                    </TextBlock.Text>
-                                                </TextBlock>
-                                                <TextBlock FontSize="11">
-                                                    <TextBlock.Text>
-                                                        <MultiBinding StringFormat="{}{0} @ {1}">
-                                                            <Binding Path="Resolution"/>
-                                                            <Binding Path="Position"/>
-                                                        </MultiBinding>
-                                                    </TextBlock.Text>
-                                                </TextBlock>
-                                                <TextBlock FontSize="11" Foreground="Red" Margin="5,0,0,0" 
-                                                           Visibility="{Binding IsPrimary, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                    <TextBlock.Text>(プライマリ)</TextBlock.Text>
-                                                </TextBlock>
-                                            </StackPanel>
-                                        </CheckBox>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </ScrollViewer>
-                    </Border>
-                    
-                    <!-- 選択ボタン -->
-                    <StackPanel Orientation="Horizontal">
-                        <Button x:Name="SelectAllMonitorsButton" 
-                                Content="すべて選択" 
-                                Width="80" 
-                                Height="22"
-                                FontSize="11"
-                                Margin="0,0,5,0" 
-                                Click="SelectAllMonitorsButton_Click"/>
-                        <Button x:Name="DeselectAllMonitorsButton" 
-                                Content="すべて解除" 
-                                Width="80" 
-                                Height="22"
-                                FontSize="11"
-                                Click="DeselectAllMonitorsButton_Click"/>
-                    </StackPanel>
-                </StackPanel>
-                
-                <!-- 第2列: 画面設定 -->
-                <StackPanel Grid.Column="1" Margin="10,0">
-                    <TextBlock Text="画面設定:" FontWeight="Bold" Margin="0,0,0,8"/>
-                    
-                    <!-- 解像度設定 -->
-                    <TextBlock Text="解像度:" FontWeight="Bold" Margin="0,0,0,5"/>
-                    <Grid Margin="0,0,0,10">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        
-                        <!-- 解像度スライダー -->
-                        <Slider x:Name="ResolutionSlider" 
-                                Grid.Row="0"
-                                Minimum="0" 
-                                Maximum="10" 
-                                Value="5" 
-                                TickPlacement="BottomRight" 
-                                TickFrequency="1" 
-                                IsSnapToTickEnabled="True"
-                                Margin="0,0,0,5"
-                                ValueChanged="ResolutionSlider_ValueChanged"/>
-                        
-                        <!-- 解像度表示 -->
-                        <TextBlock x:Name="ResolutionDisplayText" 
-                                   Grid.Row="1"
-                                   Text="1920 × 1080 px" 
-                                   HorizontalAlignment="Center"
-                                   FontSize="11"
-                                   Margin="0,0,0,5"/>
-                        
-                        <!-- カスタム解像度入力 -->
-                        <Grid Grid.Row="2" x:Name="CustomResolutionGrid" Visibility="Collapsed">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="50"/>
-                                <ColumnDefinition Width="10"/>
-                                <ColumnDefinition Width="50"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBox x:Name="DesktopWidthTextBox" Grid.Column="0" Text="1920" FontSize="10" TextChanged="CustomResolution_TextChanged"/>
-                            <TextBlock Grid.Column="1" Text="×" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            <TextBox x:Name="DesktopHeightTextBox" Grid.Column="2" Text="1080" FontSize="10" TextChanged="CustomResolution_TextChanged"/>
-                            <TextBlock Grid.Column="3" Text="  px" VerticalAlignment="Center" FontSize="10"/>
-                        </Grid>
-                    </Grid>
-                    
-                    <!-- 色深度 -->
-                    <TextBlock Text="色深度:" FontWeight="Bold" Margin="0,0,0,5"/>
-                    <ComboBox x:Name="ColorDepthComboBox" Margin="0,0,0,8" FontSize="11">
-                        <ComboBoxItem Content="High Color (16 bit)" Tag="16"/>
-                        <ComboBoxItem Content="True Color (24 bit)" IsSelected="True" Tag="24"/>
-                        <ComboBoxItem Content="True Color (32 bit)" Tag="32"/>
-                    </ComboBox>
-                </StackPanel>
-                
-                <!-- 第3列: モニターレイアウト -->
-                <StackPanel Grid.Column="2" Margin="10,0,0,0">
-                    <TextBlock Text="モニターレイアウト:" 
-                               FontWeight="Bold" 
-                               Margin="0,0,0,5"/>
-                    
-                    <Border BorderBrush="LightGray" 
-                            BorderThickness="1" 
-                            Background="#F5F5F5"
-                            Height="180"
-                            Margin="0,0,0,8">
-                        <Canvas x:Name="MonitorLayoutCanvas" 
-                                SizeChanged="MonitorLayoutCanvas_SizeChanged"/>
-                    </Border>
-                </StackPanel>
-            </Grid>
-        </GroupBox>
-        
         <!-- フッター -->
-        <Grid Grid.Row="3" Margin="10">
+        <Grid Grid.Row="2" Margin="5">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
@@ -550,7 +513,7 @@
             <Button x:Name="WakeButton" 
                     Grid.Column="1" 
                     Content="Wake On LAN" 
-                    Width="120" 
+                    Width="100" 
                     Height="30" 
                     Margin="0,0,8,0"
                     FontWeight="Bold"
@@ -559,11 +522,32 @@
             <Button x:Name="ConnectButton" 
                     Grid.Column="2" 
                     Content="接続" 
-                    Width="120" 
+                    Width="100" 
                     Height="30" 
                     FontWeight="Bold"
                     IsDefault="True"
                     Click="ConnectButton_Click"/>
+        </Grid>
+        
+        <!-- CustomResolutionGridを隠しGrid内に設定 -->
+        <Grid Visibility="Collapsed">
+            <Grid x:Name="CustomResolutionGrid">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="60"/>
+                    <ColumnDefinition Width="10"/>
+                    <ColumnDefinition Width="60"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBox x:Name="DesktopWidthTextBox" Grid.Column="0" Text="1920" FontSize="11" TextChanged="CustomResolution_TextChanged"/>
+                <TextBlock Grid.Column="1" Text="×" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <TextBox x:Name="DesktopHeightTextBox" Grid.Column="2" Text="1080" FontSize="11" TextChanged="CustomResolution_TextChanged"/>
+                <TextBlock Grid.Column="3" Text="  px" VerticalAlignment="Center" FontSize="11"/>
+            </Grid>
+        </Grid>
+        
+        <!-- MonitorLayoutCanvasを隠しGrid内に設定 -->
+        <Grid Visibility="Collapsed">
+            <Canvas x:Name="MonitorLayoutCanvas" SizeChanged="MonitorLayoutCanvas_SizeChanged"/>
         </Grid>
     </Grid>
 </Window>

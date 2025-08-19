@@ -178,6 +178,63 @@ namespace RemoteWakeConnect
                 
                 _currentConnection = _rdpFileService.LoadRdpFile(filePath);
                 
+                // 外部からのRDPファイルの場合、rdp_filesフォルダにコピー
+                var rdpFilesFolder = System.IO.Path.Combine(AppContext.BaseDirectory, "rdp_files");
+                if (!filePath.StartsWith(rdpFilesFolder, StringComparison.OrdinalIgnoreCase))
+                {
+                    // rdp_filesフォルダが存在しない場合は作成
+                    if (!Directory.Exists(rdpFilesFolder))
+                    {
+                        Directory.CreateDirectory(rdpFilesFolder);
+                    }
+                    
+                    // コピー先のファイル名を生成
+                    var targetHost = "";
+                    if (!string.IsNullOrEmpty(_currentConnection.ComputerName))
+                    {
+                        targetHost = _currentConnection.ComputerName;
+                    }
+                    else if (!string.IsNullOrEmpty(_currentConnection.IpAddressValue))
+                    {
+                        targetHost = _currentConnection.IpAddressValue.Replace(".", "_");
+                    }
+                    else if (!string.IsNullOrEmpty(_currentConnection.FullAddress))
+                    {
+                        var parts = _currentConnection.FullAddress.Split(':');
+                        targetHost = parts[0].Replace(".", "_");
+                    }
+                    else
+                    {
+                        targetHost = System.IO.Path.GetFileNameWithoutExtension(filePath);
+                    }
+                    
+                    // 無効な文字を除去
+                    var invalidChars = System.IO.Path.GetInvalidFileNameChars();
+                    foreach (var c in invalidChars)
+                    {
+                        targetHost = targetHost.Replace(c, '_');
+                    }
+                    
+                    // ファイル名を生成（タイムスタンプなし）
+                    var newFileName = $"{targetHost}.rdp";
+                    var newFilePath = System.IO.Path.Combine(rdpFilesFolder, newFileName);
+                    
+                    // ファイルをコピー
+                    File.Copy(filePath, newFilePath, true);
+                    
+                    // 現在の接続情報にrdp_filesフォルダのパスを設定
+                    _currentConnection.RdpFilePath = newFilePath;
+                    _currentConnection.Name = newFileName;
+                    
+                    LogDebug($"外部RDPファイルをコピー: {filePath} → {newFilePath}");
+                }
+                else
+                {
+                    // 既にrdp_filesフォルダ内のファイルの場合はそのまま使用
+                    _currentConnection.RdpFilePath = filePath;
+                    _currentConnection.Name = System.IO.Path.GetFileName(filePath);
+                }
+                
                 // FullAddressからコンピュータ名またはIPとポートを分離
                 var fullAddr = _currentConnection.FullAddress;
                 if (!string.IsNullOrEmpty(fullAddr))
@@ -241,8 +298,14 @@ namespace RemoteWakeConnect
                     
                     string? macAddress = null;
                     
-                    // IPアドレスまたはコンピュータ名からMACアドレスを取得
-                    var targetHost = !string.IsNullOrEmpty(IpAddressTextBox.Text) ? IpAddressTextBox.Text : ComputerNameTextBox.Text;
+                    // コンピュータ名を優先してMACアドレスを取得（DHCP環境でのIP変更に対応）
+                    var targetHost = !string.IsNullOrEmpty(ComputerNameTextBox.Text) ? ComputerNameTextBox.Text : IpAddressTextBox.Text;
+                    
+                    // コンピュータ名の場合は最新のIPアドレスを解決
+                    if (!string.IsNullOrEmpty(ComputerNameTextBox.Text) && System.Net.IPAddress.TryParse(ComputerNameTextBox.Text, out _) == false)
+                    {
+                        await ResolveHostNameAsync(ComputerNameTextBox.Text);
+                    }
                     if (!string.IsNullOrEmpty(targetHost))
                     {
                         macAddress = await _networkService.GetMacAddressAsync(targetHost);
@@ -487,7 +550,15 @@ namespace RemoteWakeConnect
                 WakeButton.IsEnabled = false;
                 StatusText.Text = "Wake On LANパケットを送信中...";
                 
-                var targetHost = !string.IsNullOrEmpty(IpAddressTextBox.Text) ? IpAddressTextBox.Text : ComputerNameTextBox.Text;
+                // コンピュータ名を優先（DHCP環境でのIP変更に対応）
+                var targetHost = !string.IsNullOrEmpty(ComputerNameTextBox.Text) ? ComputerNameTextBox.Text : IpAddressTextBox.Text;
+                
+                // コンピュータ名の場合は最新のIPアドレスを解決してからWOL実行
+                if (!string.IsNullOrEmpty(ComputerNameTextBox.Text) && System.Net.IPAddress.TryParse(ComputerNameTextBox.Text, out _) == false)
+                {
+                    await ResolveHostNameAsync(ComputerNameTextBox.Text);
+                }
+                
                 await _wakeOnLanService.SendMagicPacketAsync(MacAddressTextBox.Text, targetHost);
                 StatusText.Text = "Wake On LANパケットを送信しました。";
                 
@@ -540,12 +611,19 @@ namespace RemoteWakeConnect
                     _currentConnection = new RdpConnection();
                 }
                 
-                // RDPファイルからの設定がある場合
+                // RDPファイルからの設定がある場合（UIから最新の値を取得）
                 if (!string.IsNullOrEmpty(ComputerNameTextBox.Text) || !string.IsNullOrEmpty(IpAddressTextBox.Text))
                 {
                     _currentConnection.ComputerName = ComputerNameTextBox.Text;
                     _currentConnection.IpAddressValue = IpAddressTextBox.Text;
                     _currentConnection.MacAddress = MacAddressTextBox.Text;
+                    _currentConnection.Username = UsernameTextBox.Text; // ユーザー名も更新
+                    
+                    // ポート番号も最新の値を反映
+                    if (!string.IsNullOrEmpty(PortTextBox.Text) && int.TryParse(PortTextBox.Text, out int port))
+                    {
+                        _currentConnection.Port = port;
+                    }
                 }
                 // 直接入力からの設定
                 else if (!string.IsNullOrEmpty(DirectAddressTextBox.Text))
@@ -581,6 +659,85 @@ namespace RemoteWakeConnect
                     }
                     
                     _currentConnection.MacAddress = MacAddressTextBox.Text;
+                    
+                    // 直打ち接続の場合、RDPファイルを自動生成
+                    if (string.IsNullOrEmpty(_currentConnection.RdpFilePath))
+                    {
+                        var rdpFilesFolder = System.IO.Path.Combine(AppContext.BaseDirectory, "rdp_files");
+                        
+                        // rdp_filesフォルダが存在しない場合は作成
+                        if (!Directory.Exists(rdpFilesFolder))
+                        {
+                            Directory.CreateDirectory(rdpFilesFolder);
+                        }
+                        
+                        // ファイル名を生成
+                        var targetHost = "";
+                        if (!string.IsNullOrEmpty(_currentConnection.ComputerName))
+                        {
+                            targetHost = _currentConnection.ComputerName;
+                        }
+                        else if (!string.IsNullOrEmpty(_currentConnection.IpAddressValue))
+                        {
+                            targetHost = _currentConnection.IpAddressValue.Replace(".", "_");
+                        }
+                        else
+                        {
+                            targetHost = "DirectConnection";
+                        }
+                        
+                        // 無効な文字を除去
+                        var invalidChars = System.IO.Path.GetInvalidFileNameChars();
+                        foreach (var c in invalidChars)
+                        {
+                            targetHost = targetHost.Replace(c, '_');
+                        }
+                        
+                        // ポート番号が3389以外の場合は追加
+                        if (_currentConnection.Port != 3389)
+                        {
+                            targetHost += $"_port{_currentConnection.Port}";
+                        }
+                        
+                        // ファイル名を生成（タイムスタンプなし）
+                        var rdpFileName = $"{targetHost}.rdp";
+                        var rdpFilePath = System.IO.Path.Combine(rdpFilesFolder, rdpFileName);
+                        
+                        _currentConnection.RdpFilePath = rdpFilePath;
+                        _currentConnection.Name = rdpFileName;
+                        
+                        // RDPファイルを保存
+                        try
+                        {
+                            // モニター設定を反映
+                            var selectedMonitorsForRdp = GetSelectedMonitors();
+                            if (selectedMonitorsForRdp.Count > 0)
+                            {
+                                _currentConnection.UseMultimon = selectedMonitorsForRdp.Count > 1;
+                                _currentConnection.SelectedMonitors = _monitorService.BuildSelectedMonitorsFlag(selectedMonitorsForRdp);
+                                
+                                // モニター設定を保存
+                                _currentConnection.SavedMonitorCount = _currentMonitors.Count;
+                                _currentConnection.SelectedMonitorIndices = _monitorConfigService.GetSelectedMonitorIndices(_currentMonitors);
+                                _currentConnection.MonitorConfigHash = _monitorConfigService.GenerateMonitorConfigHash(_currentMonitors);
+                            }
+                            
+                            // 画面設定を適用
+                            ApplyScreenSettingsToConnection(_currentConnection);
+                            
+                            // FullAddressを更新
+                            _currentConnection.UpdateFullAddress();
+                            
+                            // RDPファイルを保存
+                            _rdpFileService.SaveRdpFile(rdpFilePath, _currentConnection);
+                            LogDebug($"直打ち接続用RDPファイルを生成: {rdpFilePath}");
+                        }
+                        catch (Exception ex)
+                        {
+                            LogError($"RDPファイル生成エラー: {ex.Message}", ex);
+                            // エラーがあっても接続は続行
+                        }
+                    }
                 }
                 else
                 {
@@ -649,6 +806,19 @@ namespace RemoteWakeConnect
                 
                 await _remoteDesktopService.ConnectAsync(_currentConnection);
                 StatusText.Text = "リモートデスクトップ接続を開始しました。";
+                
+                // 履歴保存前にUIから最新の値を取得
+                _currentConnection.Username = UsernameTextBox.Text;
+                _currentConnection.MacAddress = MacAddressTextBox.Text;
+                
+                // ポート番号も最新の値を反映
+                if (!string.IsNullOrEmpty(PortTextBox.Text) && int.TryParse(PortTextBox.Text, out int currentPort))
+                {
+                    _currentConnection.Port = currentPort;
+                }
+                
+                // FullAddressを再更新
+                _currentConnection.UpdateFullAddress();
                 
                 // 接続履歴に追加（モニター設定を含む）
                 LogDebug($"Saving connection with monitor config: Count={_currentConnection.SavedMonitorCount}, Hash={_currentConnection.MonitorConfigHash}");
@@ -806,14 +976,73 @@ namespace RemoteWakeConnect
                     else
                     {
                         logMessage.Clear();
-                        logMessage.AppendLine("RDPファイルなし - 履歴データのみ使用");
+                        logMessage.AppendLine("RDPファイルなし - 新規作成");
                         File.AppendAllText(logPath, logMessage.ToString());
                         
-                        // RDPファイルがない場合は履歴データのみ使用
+                        // RDPファイルがない場合は履歴データから新規作成
                         _currentConnection = selectedItem.Clone();
-                        RdpFilePathTextBox.Text = _currentConnection.Name ?? "";
                         
-                        StatusText.Text = "履歴から基本設定を読み込みました（RDPファイルなし）。";
+                        // rdp_filesフォルダに新しいRDPファイルを作成
+                        var rdpFilesFolder = System.IO.Path.Combine(AppContext.BaseDirectory, "rdp_files");
+                        if (!Directory.Exists(rdpFilesFolder))
+                        {
+                            Directory.CreateDirectory(rdpFilesFolder);
+                        }
+                        
+                        // ファイル名を生成
+                        var targetHost = "";
+                        if (!string.IsNullOrEmpty(_currentConnection.ComputerName))
+                        {
+                            targetHost = _currentConnection.ComputerName;
+                        }
+                        else if (!string.IsNullOrEmpty(_currentConnection.IpAddressValue))
+                        {
+                            targetHost = _currentConnection.IpAddressValue.Replace(".", "_");
+                        }
+                        else
+                        {
+                            targetHost = "HistoryConnection";
+                        }
+                        
+                        // 無効な文字を除去
+                        var invalidChars = System.IO.Path.GetInvalidFileNameChars();
+                        foreach (var c in invalidChars)
+                        {
+                            targetHost = targetHost.Replace(c, '_');
+                        }
+                        
+                        // ポート番号が3389以外の場合は追加
+                        if (_currentConnection.Port != 3389)
+                        {
+                            targetHost += $"_port{_currentConnection.Port}";
+                        }
+                        
+                        // ファイル名を生成（タイムスタンプなし）
+                        var rdpFileName = $"{targetHost}.rdp";
+                        var rdpFilePath = System.IO.Path.Combine(rdpFilesFolder, rdpFileName);
+                        
+                        _currentConnection.RdpFilePath = rdpFilePath;
+                        _currentConnection.Name = rdpFileName;
+                        
+                        // RDPファイルを保存
+                        try
+                        {
+                            var rdpFileService = new RdpFileService();
+                            rdpFileService.SaveRdpFile(rdpFilePath, _currentConnection);
+                            
+                            // 履歴を更新してRDPファイルパスを保存
+                            _historyService.UpdateConnection(_currentConnection);
+                            
+                            RdpFilePathTextBox.Text = rdpFilePath;
+                            StatusText.Text = "履歴から設定を読み込み、新しいRDPファイルを作成しました。";
+                            LogDebug($"履歴用RDPファイルを生成: {rdpFilePath}");
+                        }
+                        catch (Exception ex)
+                        {
+                            LogError($"RDPファイル生成エラー: {ex.Message}", ex);
+                            RdpFilePathTextBox.Text = _currentConnection.Name ?? "";
+                            StatusText.Text = "履歴から基本設定を読み込みました（RDPファイル作成失敗）。";
+                        }
                     }
                     
                     // デバッグログ: _currentConnection の値
@@ -969,7 +1198,8 @@ namespace RemoteWakeConnect
 
         private async void CheckStatusButton_Click(object sender, RoutedEventArgs e)
         {
-            var targetHost = !string.IsNullOrEmpty(IpAddressTextBox.Text) ? IpAddressTextBox.Text : ComputerNameTextBox.Text;
+            // コンピュータ名を優先（DHCP環境でのIP変更に対応）
+                var targetHost = !string.IsNullOrEmpty(ComputerNameTextBox.Text) ? ComputerNameTextBox.Text : IpAddressTextBox.Text;
             await CheckHostStatusAsync(targetHost);
         }
 
@@ -1173,7 +1403,8 @@ namespace RemoteWakeConnect
                         {
                             // Wake On LANを送信
                             StatusText.Text = "Wake On LANパケットを送信中...";
-                            var targetHost = !string.IsNullOrEmpty(IpAddressTextBox.Text) ? IpAddressTextBox.Text : ComputerNameTextBox.Text;
+                            // コンピュータ名を優先（DHCP環境でのIP変更に対応）
+                var targetHost = !string.IsNullOrEmpty(ComputerNameTextBox.Text) ? ComputerNameTextBox.Text : IpAddressTextBox.Text;
                             await _wakeOnLanService.SendMagicPacketAsync(MacAddressTextBox.Text, targetHost);
                             
                             // 起動を待つ
@@ -1690,7 +1921,12 @@ namespace RemoteWakeConnect
         /// </summary>
         private string GetTargetHost(RdpConnection connection)
         {
-            if (!string.IsNullOrEmpty(connection?.FullAddress))
+            // コンピュータ名を優先（DHCP環境でのIP変更に対応）
+            if (!string.IsNullOrEmpty(connection?.ComputerName))
+            {
+                return connection.ComputerName;
+            }
+            else if (!string.IsNullOrEmpty(connection?.FullAddress))
             {
                 var parts = connection.FullAddress.Split(':');
                 return parts[0];
@@ -1698,10 +1934,6 @@ namespace RemoteWakeConnect
             else if (!string.IsNullOrEmpty(connection?.IpAddress))
             {
                 return connection.IpAddress;
-            }
-            else if (!string.IsNullOrEmpty(connection?.ComputerName))
-            {
-                return connection.ComputerName;
             }
             return "";
         }
@@ -1814,6 +2046,36 @@ namespace RemoteWakeConnect
                 DesktopWidthTextBox.Text = connection.DesktopWidth.ToString();
                 DesktopHeightTextBox.Text = connection.DesktopHeight.ToString();
                 
+                // 解像度スライダーを設定（履歴の解像度に対応するインデックスを検索）
+                if (_availableResolutions != null && _availableResolutions.Count > 0)
+                {
+                    // 履歴の解像度に一致するスライダー位置を検索
+                    int matchingIndex = -1;
+                    for (int i = 0; i < _availableResolutions.Count; i++)
+                    {
+                        var res = _availableResolutions[i];
+                        if (res.Width == connection.DesktopWidth && res.Height == connection.DesktopHeight)
+                        {
+                            matchingIndex = i;
+                            break;
+                        }
+                    }
+                    
+                    if (matchingIndex >= 0)
+                    {
+                        ResolutionSlider.Value = matchingIndex;
+                        LogDebug($"解像度スライダーを設定: インデックス {matchingIndex} ({connection.DesktopWidth}x{connection.DesktopHeight})");
+                    }
+                    else
+                    {
+                        // 一致する解像度が見つからない場合はカスタム解像度として扱う
+                        // カスタム解像度は最後から3番目の位置（全画面とその他の前）
+                        int customIndex = Math.Max(0, _availableResolutions.Count - 3);
+                        ResolutionSlider.Value = customIndex;
+                        LogDebug($"カスタム解像度として設定: インデックス {customIndex} ({connection.DesktopWidth}x{connection.DesktopHeight})");
+                    }
+                }
+                
                 // 色深度
                 foreach (ComboBoxItem item in ColorDepthComboBox.Items)
                 {
@@ -1872,7 +2134,7 @@ namespace RemoteWakeConnect
                     }
                     else
                     {
-                        connection.ScreenModeId = 1; // ウィンドウモード
+                        connection.ScreenModeId = 1; // ウィンドウモード（選択した解像度で表示）
                     }
                 }
                 
@@ -1881,6 +2143,9 @@ namespace RemoteWakeConnect
                     connection.DesktopWidth = width;
                 if (int.TryParse(DesktopHeightTextBox.Text, out int height))
                     connection.DesktopHeight = height;
+                    
+                // デバッグログ出力
+                LogDebug($"画面設定適用: ScreenModeId={connection.ScreenModeId}, Width={connection.DesktopWidth}, Height={connection.DesktopHeight}");
                     
                 // 色深度
                 if (ColorDepthComboBox.SelectedItem is ComboBoxItem colorItem && 
