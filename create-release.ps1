@@ -2,8 +2,29 @@
 # Usage: .\create-release.ps1 [-Version "1.1.0"]
 
 param(
-    [string]$Version = "1.1.0"
+    [string]$Version = ""  # 空の場合はプロジェクトファイルから自動取得
 )
+
+# バージョン自動取得
+if ([string]::IsNullOrEmpty($Version)) {
+    Write-Host "Detecting version from project files..." -ForegroundColor Cyan
+    
+    # プロジェクトファイルからバージョン取得
+    $csprojPath = Join-Path $PSScriptRoot "src\RemoteWakeConnect.csproj"
+    if (Test-Path $csprojPath) {
+        $csprojContent = Get-Content $csprojPath -Raw
+        if ($csprojContent -match '<AssemblyVersion>([^<]+)</AssemblyVersion>') {
+            $Version = $matches[1]
+            Write-Host "✓ Version detected from csproj: $Version" -ForegroundColor Green
+        }
+    }
+    
+    if ([string]::IsNullOrEmpty($Version)) {
+        Write-Host "✗ Could not detect version automatically" -ForegroundColor Red
+        Write-Host "  Please specify version: .\create-release.ps1 -Version '1.2.1'" -ForegroundColor Yellow
+        exit 1
+    }
+}
 
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host " RemoteWakeConnect Release Builder" -ForegroundColor Cyan

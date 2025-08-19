@@ -51,6 +51,10 @@ namespace RemoteWakeConnect
                 
                 LogDebug("Calling InitializeComponent");
                 InitializeComponent();
+                
+                // アプリケーションバージョンをウィンドウタイトルに設定
+                var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+                this.Title = $"Remote Wake Connect v{version?.Major}.{version?.Minor}.{version?.Build}";
                 LogDebug("InitializeComponent completed");
                 
                 LogDebug("Creating services");

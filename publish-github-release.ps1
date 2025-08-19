@@ -2,8 +2,9 @@
 # Usage: .\publish-github-release.ps1 [-Version "1.1.0"] [-Draft]
 
 param(
-    [string]$Version = "1.1.0",
-    [switch]$Draft = $false
+    [string]$Version = "",  # 空の場合はプロジェクトファイルから自動取得
+    [switch]$Draft = $false,
+    [switch]$AutoNotes = $true  # CHANGELOGから自動生成
 )
 
 Write-Host "========================================" -ForegroundColor Cyan
@@ -11,6 +12,43 @@ Write-Host " GitHub Release Publisher" -ForegroundColor Cyan
 Write-Host " Version: $Version" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
+
+# バージョン自動取得
+if ([string]::IsNullOrEmpty($Version)) {
+    Write-Host "Detecting version from project files..." -ForegroundColor Cyan
+    
+    # プロジェクトファイルからバージョン取得
+    $csprojPath = Join-Path $PSScriptRoot "src\RemoteWakeConnect.csproj"
+    if (Test-Path $csprojPath) {
+        $csprojContent = Get-Content $csprojPath -Raw
+        if ($csprojContent -match '<AssemblyVersion>([^<]+)</AssemblyVersion>') {
+            $Version = $matches[1]
+            Write-Host "✓ Version detected from csproj: $Version" -ForegroundColor Green
+        }
+    }
+    
+    # CHANGELOGからも確認
+    $changelogPath = Join-Path $PSScriptRoot "CHANGELOG.md"
+    if (Test-Path $changelogPath) {
+        $changelogContent = Get-Content $changelogPath -Raw
+        if ($changelogContent -match '## \[([^\]]+)\] - \d{4}-\d{2}-\d{2}') {
+            $changelogVersion = $matches[1]
+            if ($changelogVersion -ne $Version) {
+                Write-Host "⚠ Version mismatch: csproj($Version) vs changelog($changelogVersion)" -ForegroundColor Yellow
+                Write-Host "Using changelog version: $changelogVersion" -ForegroundColor Yellow
+                $Version = $changelogVersion
+            }
+        }
+    }
+    
+    if ([string]::IsNullOrEmpty($Version)) {
+        Write-Host "✗ Could not detect version automatically" -ForegroundColor Red
+        Write-Host "  Please specify version: .\publish-github-release.ps1 -Version '1.2.1'" -ForegroundColor Yellow
+        exit 1
+    }
+}
+
+Write-Host " Version: $Version" -ForegroundColor Cyan
 
 # パス設定
 $projectPath = $PSScriptRoot
@@ -30,27 +68,30 @@ $zipInfo = Get-Item $zipFilePath
 $sizeMB = [math]::Round($zipInfo.Length / 1MB, 2)
 Write-Host "  Size: $sizeMB MB" -ForegroundColor Cyan
 
-# リリースノート作成
-$releaseNotes = @"
+# リリースノート生成
+if ($AutoNotes -and (Test-Path (Join-Path $PSScriptRoot "CHANGELOG.md"))) {
+    Write-Host "Generating release notes from CHANGELOG.md..." -ForegroundColor Cyan
+    
+    $changelogContent = Get-Content (Join-Path $PSScriptRoot "CHANGELOG.md") -Raw
+    
+    # 該当バージョンの部分を抽出
+    $versionPattern = "## \[$Version\] - (\d{4}-\d{2}-\d{2})(.*?)(?=## \[|\z)"
+    if ($changelogContent -match $versionPattern) {
+        $releaseDate = $matches[1]
+        $versionChanges = $matches[2].Trim()
+        
+        $releaseNotes = @"
 # RemoteWakeConnect v$Version
 
-## 🎉 主な変更点
+Released: $releaseDate
 
-### パフォーマンス改善
-- ⚡ **セッション監視の高速化**: WMI廃止により2-5秒→即座に応答
-- 🔄 **段階的リトライ機能**: 接続失敗時は5秒→10秒→20秒で再試行
-- 💾 **OS情報キャッシュ**: 30日間有効なYAMLキャッシュで2回目以降高速化
-
-### 機能改善
-- 🖥️ **モニター設定改善**: 構成変更通知をOKボタンのみに改善
-- 🔌 **カスタムポート対応**: 3389以外のポートでも安定動作
-- 🛡️ **ビルド品質向上**: null参照警告を完全解消
+$versionChanges
 
 ## 📦 インストール方法
 
-1. \`RemoteWakeConnect-v$Version.zip\` をダウンロード
+1. ``RemoteWakeConnect-v$Version.zip`` をダウンロード
 2. 任意のフォルダに解凍
-3. \`RemoteWakeConnect.exe\` を実行
+3. ``RemoteWakeConnect.exe`` を実行
 
 ## 🔧 動作環境
 
@@ -68,6 +109,50 @@ $releaseNotes = @"
 ---
 *This release was created with automated build tools.*
 "@
+        Write-Host "✓ Release notes generated from CHANGELOG.md" -ForegroundColor Green
+    } else {
+        Write-Host "⚠ Version $Version not found in CHANGELOG.md, using default template" -ForegroundColor Yellow
+        $releaseNotes = @"
+# RemoteWakeConnect v$Version
+
+## 📦 インストール方法
+
+1. ``RemoteWakeConnect-v$Version.zip`` をダウンロード
+2. 任意のフォルダに解凍
+3. ``RemoteWakeConnect.exe`` を実行
+
+## 🔧 動作環境
+
+- Windows 10/11
+- .NET 8.0 Runtime
+
+## 📝 更新履歴
+
+詳細な変更点は [CHANGELOG.md](https://github.com/aziproducer/RemoteWakeConnect/blob/master/CHANGELOG.md) をご覧ください。
+
+---
+*This release was created with automated build tools.*
+"@
+    }
+} else {
+    # 手動指定の場合のデフォルトテンプレート
+    $releaseNotes = @"
+# RemoteWakeConnect v$Version
+
+## 📦 インストール方法
+
+1. ``RemoteWakeConnect-v$Version.zip`` をダウンロード
+2. 任意のフォルダに解凍
+3. ``RemoteWakeConnect.exe`` を実行
+
+## 🔧 動作環境
+
+- Windows 10/11
+- .NET 8.0 Runtime
+
+詳細な変更点は [CHANGELOG.md](https://github.com/aziproducer/RemoteWakeConnect/blob/master/CHANGELOG.md) をご覧ください。
+"@
+}
 
 # 一時ファイルにリリースノートを保存
 $releaseNotesPath = Join-Path $env:TEMP "release_notes_$Version.md"
